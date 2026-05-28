@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: weather-telegram-bot
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 20
+      - key: TIMEZONE
+        value: Europe/Madrid
+      - key: RAIN_THRESHOLD
+        value: 50
+      - key: ENABLE_INTERNAL_CRON
+        value: true
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: PUBLIC_URL
+        sync: false
+      - key: CRON_SECRET
+        sync: false

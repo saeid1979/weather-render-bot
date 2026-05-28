@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Weather Telegram Bot</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="card">
+    <h1>ربات حرفه‌ای آب‌وهوا</h1>
+    <p>گزارش روزانه، انتخاب شهر از تلگرام، نمودار تصویری و هشدار بارندگی بالای ۵۰٪.</p>
+    <div class="buttons">
+      <a href="/api/report-preview?city=salamanca">گزارش سالامانکا</a>
+      <a href="/api/report-preview?city=madrid">گزارش مادرید</a>
+      <a href="/api/chart?city=salamanca">نمودار سالامانکا</a>
+      <a href="/health">Health Check</a>
+    </div>
+    <p class="hint">بعد از Deploy در Render، آدرس PUBLIC_URL را تنظیم و /api/set-webhook را یک‌بار باز کنید.</p>
+  </main>
+</body>
+</html>
