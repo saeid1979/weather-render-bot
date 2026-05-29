@@ -59,7 +59,7 @@ const defaultSettings = {
   coldWarningC: Number(process.env.COLD_WARNING_C || 0),
   realTimeAlerts: true,
   dailyReport: true,
-  selectedCities: ['salamanca', 'madrid', 'tehran', 'ardabil'],
+  selectedCities: ['salamanca', 'madrid', 'tehran', 'ardabil', 'nouakchott', 'bordeaux'],
   alertCooldownMinutes: 120
 };
 
@@ -67,7 +67,9 @@ const defaultCities = {
   salamanca: { key: 'salamanca', name: 'Salamanca, Spain', fa: 'سالامانکا، اسپانیا', es: 'Salamanca, España', ar: 'سالامانكا، إسبانيا', lat: 40.9701, lon: -5.6635 },
   madrid: { key: 'madrid', name: 'Madrid, Spain', fa: 'مادرید، اسپانیا', es: 'Madrid, España', ar: 'مدريد، إسبانيا', lat: 40.4168, lon: -3.7038 },
   tehran: { key: 'tehran', name: 'Tehran, Iran', fa: 'تهران، ایران', es: 'Teherán, Irán', ar: 'طهران، إيران', lat: 35.6892, lon: 51.3890 },
-  ardabil: { key: 'ardabil', name: 'Ardabil, Iran', fa: 'اردبیل، ایران', es: 'Ardabil, Irán', ar: 'أردبيل، إيران', lat: 38.2498, lon: 48.2933 }
+  ardabil: { key: 'ardabil', name: 'Ardabil, Iran', fa: 'اردبیل، ایران', es: 'Ardabil, Irán', ar: 'أردبيل، إيران', lat: 38.2498, lon: 48.2933 },
+  nouakchott: { key: 'nouakchott', name: 'Nouakchott, Mauritania', fa: 'نواکشوت، موریتانی', es: 'Nuakchot, Mauritania', ar: 'نواكشوط، موريتانيا', lat: 18.0735, lon: -15.9582 },
+  bordeaux: { key: 'bordeaux', name: 'Bordeaux, France', fa: 'بوردو، فرانسه', es: 'Burdeos, Francia', ar: 'بوردو، فرنسا', lat: 44.8378, lon: -0.5792 }
 };
 
 function clone(x) { return JSON.parse(JSON.stringify(x)); }
@@ -91,6 +93,18 @@ let settings = loadJson(SETTINGS_PATH, defaultSettings);
 let cities = loadJson(CITIES_PATH, defaultCities);
 let users = loadJson(USERS_PATH, {});
 let logs = loadJson(LOGS_PATH, []);
+
+// Migration: always keep newly supported default cities available,
+// even when an older cities.json/settings.json already exists on Render.
+for (const [cityKey, cityValue] of Object.entries(defaultCities)) {
+  if (!cities[cityKey]) cities[cityKey] = cityValue;
+}
+if (!Array.isArray(settings.selectedCities)) settings.selectedCities = [];
+for (const cityKey of ['nouakchott', 'bordeaux']) {
+  if (!settings.selectedCities.includes(cityKey)) settings.selectedCities.push(cityKey);
+}
+saveCities();
+saveSettings();
 let sentDaily = loadJson(SENT_PATH, {});
 
 function saveSettings() { saveJson(SETTINGS_PATH, settings); }
@@ -429,8 +443,10 @@ async function sendMainMenu(chatId, botKey = DEFAULT_BOT_KEY) {
     reply_markup: { inline_keyboard: [
       [{ text: '🌤 Salamanca', callback_data: 'weather:salamanca' }, { text: '🌤 Madrid', callback_data: 'weather:madrid' }],
       [{ text: '🌤 Tehran', callback_data: 'weather:tehran' }, { text: '🌤 Ardabil', callback_data: 'weather:ardabil' }],
+      [{ text: '🌤 Nouakchott', callback_data: 'weather:nouakchott' }, { text: '🌤 Bordeaux', callback_data: 'weather:bordeaux' }],
       [{ text: '📊 Chart Salamanca', callback_data: 'chart:salamanca' }, { text: '📊 Chart Madrid', callback_data: 'chart:madrid' }],
       [{ text: '📊 Chart Tehran', callback_data: 'chart:tehran' }, { text: '📊 Chart Ardabil', callback_data: 'chart:ardabil' }],
+      [{ text: '📊 Chart Nouakchott', callback_data: 'chart:nouakchott' }, { text: '📊 Chart Bordeaux', callback_data: 'chart:bordeaux' }],
       [{ text: tr(lang, 'liveMap'), url: mapUrl }],
       [{ text: tr(lang, 'alertStatus'), callback_data: 'alerts:status' }, { text: tr(lang, 'settings'), callback_data: 'settings:show' }],
       [{ text: '🇪🇸 Español', callback_data: 'lang:es' }, { text: '🇸🇦 العربية', callback_data: 'lang:ar' }, { text: '🇮🇷 فارسی', callback_data: 'lang:fa' }],

@@ -1,140 +1,106 @@
-# Weather Render Bot - Multi Bot + Multi Language + Admin Panel
+# Weather Render Bot - Multi-Bot + Multi-User
 
-این نسخه شامل این اصلاحات است:
+این نسخه از چند بات تلگرام همزمان پشتیبانی می‌کند. هر کاربر علاوه بر `chatId` یک `botKey` دارد، بنابراین اگر یک Chat ID مربوط به بات دوم باشد، پیام با توکن همان بات دوم ارسال می‌شود.
 
-- پشتیبانی Multi-Bot با `main`, `second`, و هر Bot Key دلخواه
-- ارسال همگانی واقعی به همه کاربران فعال، با توکن همان بات کاربر
-- نمایش نتیجه ارسال برای هر کاربر در پنل: sent, invalid token, blocked, chat not found
-- ذخیره دائمی زبان انتخابی هر کاربر
-- دکمه انتخاب زبان در `/menu` و دستور `/language`
-- ثبت خودکار کاربر با `/start`
-- پنل مدیریت کاربران، شهرها، تنظیمات، لاگ‌ها و Broadcast
-- گزارش دستی از ساعت فعلی تا 24:00
-- نقشه زنده و کلیک روی هر نقطه برای دریافت آب‌وهوا
+## قابلیت‌های مهم
 
-## نصب روی سیستم خودت
+- چند بات با چند Bot Token
+- Webhook جدا برای هر بات
+- ثبت خودکار کاربر با `/start` در همان باتی که پیام داده است
+- ذخیره `botKey + chatId` برای هر کاربر
+- ارسال همگانی به همه بات‌ها یا فقط یک بات خاص
+- نمایش نتیجه ارسال برای هر کاربر: ارسال شد، Block/Not Started، Chat Not Found
+- پشتیبانی زبان فارسی، اسپانیایی و عربی
+- پنل مدیریت کاربران، شهرها، لاگ‌ها، هشدارها و تنظیمات
+- نقشه زنده و گزارش دستی از لحظه درخواست تا 24:00
 
-```bash
-cd H:\weather-render-bot
-npm install
-npm start
-```
-
-## آپلود تغییرات به GitHub
-
-بعد از جایگزینی فایل‌ها:
-
-```bash
-cd H:\weather-render-bot
-npm install
-git add .
-git commit -m "final multibot language broadcast fix"
-git push
-```
-
-## تنظیمات Render Environment
-
-در Render مسیر زیر را باز کن:
-
-`weather-render-bot -> Environment`
-
-حداقل این متغیرها باید وجود داشته باشند:
+## Render Environment Variables
 
 ```env
-TELEGRAM_BOT_TOKEN=توکن_بات_اصلی_از_BotFather
-TELEGRAM_CHAT_ID=74774761
-BOT_TOKEN_SECOND=توکن_بات_دوم_از_BotFather
+TELEGRAM_BOT_TOKEN=توکن_بات_اصلی
+TELEGRAM_CHAT_ID=چت_آیدی_ادمین_در_بات_اصلی
+BOT_TOKEN_SECOND=توکن_بات_دوم
+BOT_TOKEN_RESTAURANT=توکن_بات_سوم_اختیاری
 DEFAULT_BOT_KEY=main
 PUBLIC_URL=https://weather-render-bot.onrender.com
 TIMEZONE=Europe/Madrid
 RAIN_THRESHOLD=50
-ADMIN_PASSWORD=رمز_پنل_مدیریت
 ENABLE_INTERNAL_CRON=true
+ADMIN_PASSWORD=رمز_پنل
 ```
 
-نکته مهم: `BOT_TOKEN_SECOND` باید توکن کامل بات دوم باشد، نه Chat ID.
+روش JSON هم پشتیبانی می‌شود:
 
-بعد از تغییر Environment Variables:
+```env
+BOT_TOKENS_JSON={"main":"token1","second":"token2"}
+```
 
-`Manual Deploy -> Clear build cache & deploy`
+## Deploy
 
-## فعال‌سازی Webhook برای همه بات‌ها
+Build Command:
 
-بعد از Live شدن Render این آدرس را باز کن:
+```bash
+npm install
+```
+
+Start Command:
+
+```bash
+npm start
+```
+
+بعد از Deploy این لینک را باز کن تا Webhook همه بات‌ها تنظیم شود:
 
 ```text
 https://weather-render-bot.onrender.com/api/set-webhook
 ```
 
-باید نتیجه‌ای شامل `main` و `second` ببینی.
+اگر درست باشد، خروجی شامل چند webhook مثل این می‌شود:
 
-## دستورهای تلگرام
+```text
+/webhook/main
+/webhook/second
+```
+
+## دستورات تلگرام
 
 ```text
 /start
 /menu
-/language
-/lang fa
-/lang es
-/lang ar
 /chatid
 /mybot
-/mysettings
 /weather madrid
 /chart tehran
 /all
 /setcity madrid
 /settime 08:00
 /setrain 50
-/broadcast سلام تست ارسال همگانی
-/adduser CHAT_ID LANGUAGE BOT_KEY
-```
-
-مثال:
-
-```text
-/adduser 74774761 fa main
-/adduser 7604417086 ar second
-```
-
-## آدرس‌ها
-
-پنل مدیریت:
-
-```text
-https://weather-render-bot.onrender.com
-```
-
-نقشه زنده:
-
-```text
-https://weather-render-bot.onrender.com/map
-```
-
-سلامت سرور:
-
-```text
-https://weather-render-bot.onrender.com/api/health
-```
-
-وضعیت بات‌ها:
-
-```text
-https://weather-render-bot.onrender.com/api/bots
-```
-
-## نکته مهم درباره زبان
-
-وقتی کاربر از طریق دکمه‌ها یا دستور زیر زبان را انتخاب کند:
-
-```text
+/lang fa
 /lang es
+/lang ar
+/adduser 914709600 ar second
+/broadcast پیام تست
 ```
 
-یا:
+## نکته مهم
+
+هر کاربر باید در همان باتی که قرار است از آن پیام بگیرد `/start` بزند. اگر کاربر در بات دوم `/start` زده باشد، باید با `botKey=second` ذخیره شود.
+
+## آخرین اصلاحات این نسخه
+
+- پشتیبانی زبان پیش‌فرض هر کاربر: وقتی کاربر با `/language` یا دکمه زبان، زبان خود را انتخاب کند، مقدار `language` در `users.json` ذخیره می‌شود و گزارش‌ها، منو و پیام‌های بعدی با همان زبان ارسال می‌شوند.
+- اصلاح Broadcast برای Multi-Bot: ارسال همگانی برای هر کاربر با `botKey` خودش انجام می‌شود؛ برای `main` از `TELEGRAM_BOT_TOKEN` و برای `second` از `BOT_TOKEN_SECOND` استفاده می‌شود.
+- اضافه شدن دو شهر جدید به لیست پیش‌فرض، منوی تلگرام، نقشه و پنل:
+  - Nouakchott, Mauritania
+  - Bordeaux, France
+
+### نمونه دستورات شهرهای جدید
 
 ```text
-/language
+/weather nouakchott
+/weather bordeaux
+/chart nouakchott
+/chart bordeaux
+/setcity nouakchott
+/setcity bordeaux
 ```
-
-زبان در فایل کاربران ذخیره می‌شود و از آن به بعد تمام پیام‌ها، گزارش‌ها و تنظیمات برای همان کاربر با همان زبان ارسال می‌شود.
