@@ -1,8 +1,4 @@
-node_modules/
+node_modules
 .env
-settings.json
-cities.json
-users.json
-logs.json
-sent-daily.json
-*.log
+/data/*.json
+!data/.gitkeep
