@@ -107,12 +107,26 @@ function cityLabel(city) { return city.fa || city.name || city.key; }
 function todayDateString() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
-function todayRangeIndexes(hourlyTimes) {
+function currentHourInTimezone() {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: TIMEZONE,
+    hour: '2-digit',
+    hour12: false
+  }).formatToParts(new Date());
+  const hour = Number(parts.find(p => p.type === 'hour')?.value || 0);
+  return hour === 24 ? 0 : hour;
+}
+function todayRangeIndexes(hourlyTimes, mode = 'daily') {
   const today = todayDateString();
+  const startHour = mode === 'manual' ? currentHourInTimezone() : 8;
   return (hourlyTimes || [])
     .map((t, idx) => ({ t, idx }))
-    .filter(x => x.t.startsWith(today) && Number(x.t.slice(11, 13)) >= 8 && Number(x.t.slice(11, 13)) <= 23)
+    .filter(x => x.t.startsWith(today) && Number(x.t.slice(11, 13)) >= startHour && Number(x.t.slice(11, 13)) <= 23)
     .map(x => x.idx);
+}
+function rangeLabel(mode = 'daily') {
+  const startHour = mode === 'manual' ? currentHourInTimezone() : 8;
+  return `${String(startHour).padStart(2, '0')}:00 تا 24:00`;
 }
 function hourLabel(iso) { return String(iso).slice(11, 16); }
 function buildWeatherUrl(city) {
@@ -173,9 +187,9 @@ async function reverseGeocode(lat, lon) {
 function avg(arr) { return arr.length ? Math.round(arr.reduce((a,b)=>a+b,0) / arr.length) : null; }
 function max(arr) { return arr.length ? Math.max(...arr) : null; }
 function min(arr) { return arr.length ? Math.min(...arr) : null; }
-function analyzeWeather(city, weather, air) {
+function analyzeWeather(city, weather, air, mode = 'daily') {
   const h = weather.hourly || {};
-  const idxs = todayRangeIndexes(h.time || []);
+  const idxs = todayRangeIndexes(h.time || [], mode);
   const values = (name) => idxs.map(i => h[name]?.[i]).filter(v => typeof v === 'number');
   const temps = values('temperature_2m');
   const apparent = values('apparent_temperature');
@@ -217,11 +231,11 @@ function getStatus(summary, alerts) {
   if (summary.rainMax >= settings.rainThreshold || alerts.length) return 'warning';
   return 'normal';
 }
-function formatReport(city, weather, air) {
-  const { summary, alerts } = analyzeWeather(city, weather, air);
+function formatReport(city, weather, air, mode = 'daily') {
+  const { summary, alerts } = analyzeWeather(city, weather, air, mode);
   const rainHoursText = summary.rainHours.length ? summary.rainHours.map(x => `   ⏰ ${hourLabel(x.time)} → ${x.value}%`).join('\n') : '   موردی بالای حد هشدار نیست.';
   const alertText = alerts.length ? alerts.map(a => `⚠️ ${a}`).join('\n') : '✅ هشدار مهمی ثبت نشده است.';
-  return `🌤 گزارش هوشمند آب‌وهوا\n📍 ${cityLabel(city)}\n🕗 بازه بررسی: 08:00 تا 24:00\n🌍 منطقه زمانی: ${TIMEZONE}\n\n🌡 دما: ${summary.tempMin ?? '-'} تا ${summary.tempMax ?? '-'}°C\n🥵 دمای محسوس حداکثر: ${summary.apparentMax ?? '-'}°C\n🌧 بیشترین احتمال بارندگی: ${summary.rainMax ?? '-'}%\n💨 بیشترین سرعت باد: ${summary.windMax ?? '-'} km/h\n💧 میانگین رطوبت: ${summary.humidityAvg ?? '-'}%\n☀️ UV Max: ${summary.uvMax ?? '-'}\n😷 AQI Max: ${summary.aqiMax ?? '-'}\n🌅 طلوع: ${summary.sunrise ?? '-'}\n🌇 غروب: ${summary.sunset ?? '-'}\n\n🌧 ساعت‌های بارندگی بالای ${settings.rainThreshold}%:\n${rainHoursText}\n\n${alertText}\n\n🤖 خلاصه هوشمند:\n${aiLikeSummary(city, summary, alerts)}`;
+  return `🌤 گزارش هوشمند آب‌وهوا\n📍 ${cityLabel(city)}\n🕗 بازه بررسی: ${rangeLabel(mode)}\n🌍 منطقه زمانی: ${TIMEZONE}\n\n🌡 دما: ${summary.tempMin ?? '-'} تا ${summary.tempMax ?? '-'}°C\n🥵 دمای محسوس حداکثر: ${summary.apparentMax ?? '-'}°C\n🌧 بیشترین احتمال بارندگی: ${summary.rainMax ?? '-'}%\n💨 بیشترین سرعت باد: ${summary.windMax ?? '-'} km/h\n💧 میانگین رطوبت: ${summary.humidityAvg ?? '-'}%\n☀️ UV Max: ${summary.uvMax ?? '-'}\n😷 AQI Max: ${summary.aqiMax ?? '-'}\n🌅 طلوع: ${summary.sunrise ?? '-'}\n🌇 غروب: ${summary.sunset ?? '-'}\n\n🌧 ساعت‌های بارندگی بالای ${settings.rainThreshold}%:\n${rainHoursText}\n\n${alertText}\n\n🤖 خلاصه هوشمند:\n${aiLikeSummary(city, summary, alerts)}`;
 }
 
 async function sendMessage(chatId, text, extra = {}) {
@@ -246,15 +260,15 @@ async function sendMainMenu(chatId) {
     ] }
   });
 }
-async function sendWeatherToTelegram(chatId, cityKey) {
+async function sendWeatherToTelegram(chatId, cityKey, mode = 'manual') {
   const { city, weather, air } = await fetchWeather(cityKey);
   logEvent('weather', `Weather report requested for ${city.key}`, { chatId, cityKey: city.key });
-  return sendMessage(chatId, formatReport(city, weather, air));
+  return sendMessage(chatId, formatReport(city, weather, air, mode));
 }
-async function createChartBuffer(cityKey) {
+async function createChartBuffer(cityKey, mode = 'daily') {
   const { city, weather } = await fetchWeather(cityKey);
   const h = weather.hourly;
-  const indexes = todayRangeIndexes(h.time);
+  const indexes = todayRangeIndexes(h.time, 'manual');
   const labels = indexes.map(i => hourLabel(h.time[i]));
   const temp = indexes.map(i => h.temperature_2m[i]);
   const rain = indexes.map(i => h.precipitation_probability[i]);
@@ -267,24 +281,24 @@ async function createChartBuffer(cityKey) {
       { label: 'Rain Probability %', data: rain, borderWidth: 3, tension: 0.25 },
       { label: 'Wind km/h', data: wind, borderWidth: 3, tension: 0.25 }
     ]},
-    options: { responsive: false, plugins: { title: { display: true, text: `Weather Chart - ${city.name} - 08:00 to 24:00` }, legend: { display: true } }, scales: { y: { beginAtZero: true } } }
+    options: { responsive: false, plugins: { title: { display: true, text: `Weather Chart - ${city.name} - ${rangeLabel('manual')}` }, legend: { display: true } }, scales: { y: { beginAtZero: true } } }
   });
 }
-async function sendChartToTelegram(chatId, cityKey) {
+async function sendChartToTelegram(chatId, cityKey, mode = 'manual') {
   const key = normalizeCityKey(cityKey);
   if (!cities[key]) throw new Error('City not found');
   logEvent('chart', `Chart requested for ${key}`, { chatId, cityKey: key });
-  const buffer = await createChartBuffer(key);
+  const buffer = await createChartBuffer(key, mode);
   const form = new FormData();
   form.append('chat_id', String(chatId));
   form.append('caption', `📊 نمودار آب‌وهوا: ${cityLabel(cities[key])}`);
   form.append('photo', new Blob([buffer], { type: 'image/png' }), `weather-${key}.png`);
   return fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, { method: 'POST', body: form });
 }
-async function sendAllDailyReport(chatId = DEFAULT_CHAT_ID) {
+async function sendAllDailyReport(chatId = DEFAULT_CHAT_ID, mode = 'manual') {
   if (!chatId) throw new Error('TELEGRAM_CHAT_ID is missing');
   for (const key of settings.selectedCities) {
-    try { await sendWeatherToTelegram(chatId, key); } catch (err) { await sendMessage(chatId, `❌ خطا در دریافت گزارش ${key}: ${err.message}`); }
+    try { await sendWeatherToTelegram(chatId, key, mode); } catch (err) { await sendMessage(chatId, `❌ خطا در دریافت گزارش ${key}: ${err.message}`); }
   }
 }
 const alertMemory = new Map();
@@ -301,7 +315,7 @@ async function checkRealTimeAlerts() {
   for (const key of settings.selectedCities) {
     try {
       const { city, weather, air } = await fetchWeather(key);
-      const { summary, alerts } = analyzeWeather(city, weather, air);
+      const { summary, alerts } = analyzeWeather(city, weather, air, 'manual');
       const filtered = alerts.filter(a => shouldAlert(key, a));
       if (!filtered.length) continue;
       await sendMessage(DEFAULT_CHAT_ID, `🚨 هشدار فوری آب‌وهوا\n📍 ${cityLabel(city)}\n\n${filtered.map(a => `⚠️ ${a}`).join('\n')}\n\n🤖 تحلیل سریع:\n${aiLikeSummary(city, summary, filtered)}`);
@@ -317,7 +331,7 @@ function scheduleJobs() {
   if (process.env.ENABLE_INTERNAL_CRON === 'false') return;
   if (settings.dailyReport) {
     const [hh, mm] = String(settings.sendTime || '08:00').split(':').map(Number);
-    scheduledDailyTask = cron.schedule(`${mm} ${hh} * * *`, () => sendAllDailyReport().catch(err => console.error('Daily job error:', err.message)), { timezone: TIMEZONE });
+    scheduledDailyTask = cron.schedule(`${mm} ${hh} * * *`, () => sendAllDailyReport(DEFAULT_CHAT_ID, 'daily').catch(err => console.error('Daily job error:', err.message)), { timezone: TIMEZONE });
     console.log(`Daily report scheduled at ${settings.sendTime} (${TIMEZONE})`);
   }
   if (settings.realTimeAlerts) {
@@ -333,15 +347,15 @@ function adminAuth(req, res, next) {
 
 app.get('/api/health', (req, res) => res.json({ ok: true, service: 'weather-render-bot', time: new Date().toISOString(), settings }));
 app.get('/api/report-preview', async (req, res) => {
-  try { const { city, weather, air } = await fetchWeather(req.query.city || 'madrid'); res.type('text/plain').send(formatReport(city, weather, air)); }
+  try { const { city, weather, air } = await fetchWeather(req.query.city || 'madrid'); const mode = req.query.mode === 'manual' ? 'manual' : 'daily'; res.type('text/plain').send(formatReport(city, weather, air, mode)); }
   catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 app.get('/api/chart', async (req, res) => {
-  try { const buffer = await createChartBuffer(req.query.city || 'madrid'); res.set('Content-Type', 'image/png').send(buffer); }
+  try { const mode = req.query.mode === 'manual' ? 'manual' : 'daily'; const buffer = await createChartBuffer(req.query.city || 'madrid', mode); res.set('Content-Type', 'image/png').send(buffer); }
   catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 app.get('/api/send-telegram', async (req, res) => {
-  try { const key = req.query.city ? normalizeCityKey(req.query.city) : null; if (key) await sendWeatherToTelegram(DEFAULT_CHAT_ID, key); else await sendAllDailyReport(DEFAULT_CHAT_ID); res.json({ ok: true, sent: key || 'all' }); }
+  try { const key = req.query.city ? normalizeCityKey(req.query.city) : null; if (key) await sendWeatherToTelegram(DEFAULT_CHAT_ID, key, 'manual'); else await sendAllDailyReport(DEFAULT_CHAT_ID, 'manual'); res.json({ ok: true, sent: key || 'all' }); }
   catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 app.get('/api/set-webhook', async (req, res) => {
@@ -357,7 +371,7 @@ app.get('/api/map-data', async (req, res) => {
   for (const key of Object.keys(cities)) {
     try {
       const { city, weather, air } = await fetchWeather(key);
-      const { summary, alerts } = analyzeWeather(city, weather, air);
+      const { summary, alerts } = analyzeWeather(city, weather, air, 'daily');
       result.push({ key, name: city.name, fa: city.fa, lat: city.lat, lon: city.lon, summary, alerts, status: getStatus(summary, alerts), reportUrl: `/api/report-preview?city=${encodeURIComponent(key)}`, chartUrl: `/api/chart?city=${encodeURIComponent(key)}` });
     } catch (err) { result.push({ key, ...cities[key], error: err.message, status: 'error' }); }
   }
@@ -373,7 +387,7 @@ app.get('/api/point-details', async (req, res) => {
     if (Number.isNaN(lat) || Number.isNaN(lon)) return res.status(400).json({ ok: false, error: 'lat and lon are required' });
     const label = req.query.name || await reverseGeocode(lat, lon);
     const { city, weather, air } = await fetchWeatherForPoint(lat, lon, label);
-    const { summary, alerts } = analyzeWeather(city, weather, air);
+    const { summary, alerts } = analyzeWeather(city, weather, air, 'manual');
     res.json({
       ok: true,
       time: new Date().toISOString(),
@@ -395,7 +409,7 @@ app.get('/api/point-report', async (req, res) => {
   try {
     const label = req.query.name || await reverseGeocode(req.query.lat, req.query.lon);
     const { city, weather, air } = await fetchWeatherForPoint(req.query.lat, req.query.lon, label);
-    res.type('text/plain').send(formatReport(city, weather, air));
+    res.type('text/plain').send(formatReport(city, weather, air, 'manual'));
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 
@@ -404,7 +418,7 @@ app.get('/api/point-chart', async (req, res) => {
     const label = req.query.name || await reverseGeocode(req.query.lat, req.query.lon);
     const { city, weather } = await fetchWeatherForPoint(req.query.lat, req.query.lon, label);
     const h = weather.hourly;
-    const indexes = todayRangeIndexes(h.time);
+    const indexes = todayRangeIndexes(h.time, 'manual');
     const labels = indexes.map(i => hourLabel(h.time[i]));
     const temp = indexes.map(i => h.temperature_2m[i]);
     const rain = indexes.map(i => h.precipitation_probability[i]);
@@ -417,7 +431,7 @@ app.get('/api/point-chart', async (req, res) => {
         { label: 'Rain Probability %', data: rain, borderWidth: 3, tension: 0.25 },
         { label: 'Wind km/h', data: wind, borderWidth: 3, tension: 0.25 }
       ]},
-      options: { responsive: false, plugins: { title: { display: true, text: `Weather Chart - ${city.name} - 08:00 to 24:00` }, legend: { display: true } }, scales: { y: { beginAtZero: true } } }
+      options: { responsive: false, plugins: { title: { display: true, text: `Weather Chart - ${city.name} - ${rangeLabel('manual')}` }, legend: { display: true } }, scales: { y: { beginAtZero: true } } }
     });
     res.set('Content-Type', 'image/png').send(buffer);
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
@@ -428,7 +442,7 @@ app.get('/api/city-details', async (req, res) => {
     const key = normalizeCityKey(req.query.city || 'madrid');
     if (!key || !cities[key]) return res.status(404).json({ ok: false, error: 'City not found' });
     const { city, weather, air } = await fetchWeather(key);
-    const { summary, alerts } = analyzeWeather(city, weather, air);
+    const { summary, alerts } = analyzeWeather(city, weather, air, 'daily');
     res.json({
       ok: true,
       time: new Date().toISOString(),
@@ -460,8 +474,8 @@ app.post('/webhook', async (req, res) => {
       const parts = data.includes(':') ? data.split(':') : data.split('_');
       const action = parts[0];
       const cityKey = normalizeCityKey(parts[1]);
-      if (action === 'weather') return cities[cityKey] ? sendWeatherToTelegram(chatId, cityKey) : sendMessage(chatId, '❌ شهر پیدا نشد.');
-      if (action === 'chart') return cities[cityKey] ? sendChartToTelegram(chatId, cityKey) : sendMessage(chatId, '❌ شهر پیدا نشد.');
+      if (action === 'weather') return cities[cityKey] ? sendWeatherToTelegram(chatId, cityKey, 'manual') : sendMessage(chatId, '❌ شهر پیدا نشد.');
+      if (action === 'chart') return cities[cityKey] ? sendChartToTelegram(chatId, cityKey, 'manual') : sendMessage(chatId, '❌ شهر پیدا نشد.');
       if (action === 'alerts') return sendMessage(chatId, `⚠️ Real-Time Alerts: ${settings.realTimeAlerts ? 'فعال' : 'غیرفعال'}\n⏰ گزارش روزانه: ${settings.sendTime}\n🌧 حد بارندگی: ${settings.rainThreshold}%`);
       if (action === 'settings') return sendMessage(chatId, `⚙️ تنظیمات فعلی\n⏰ ساعت ارسال: ${settings.sendTime}\n🌧 حد بارندگی: ${settings.rainThreshold}%\n💨 هشدار باد: ${settings.windWarningKmh} km/h\n\nبرای تغییر ساعت:\n/settime 07:30`);
       return;
@@ -475,9 +489,9 @@ app.post('/webhook', async (req, res) => {
     logEvent('message', `Telegram command: ${text}`, { chatId });
     if (lower === '/start' || lower === '/menu') return sendMainMenu(chatId);
     if (lower === '/map') return sendMessage(chatId, `🗺 نقشه زنده آب‌وهوا:\n${PUBLIC_URL ? PUBLIC_URL.replace(/\/$/, '') + '/map' : 'PUBLIC_URL تنظیم نشده است.'}`);
-    if (lower.startsWith('/weather')) { const key = normalizeCityKey(text.split(/\s+/)[1] || 'madrid'); return cities[key] ? sendWeatherToTelegram(chatId, key) : sendMessage(chatId, '❌ شهر پیدا نشد. مثال: /weather madrid'); }
-    if (lower.startsWith('/chart')) { const key = normalizeCityKey(text.split(/\s+/)[1] || 'madrid'); return cities[key] ? sendChartToTelegram(chatId, key) : sendMessage(chatId, '❌ شهر پیدا نشد. مثال: /chart tehran'); }
-    if (lower === '/all') return sendAllDailyReport(chatId);
+    if (lower.startsWith('/weather')) { const key = normalizeCityKey(text.split(/\s+/)[1] || 'madrid'); return cities[key] ? sendWeatherToTelegram(chatId, key, 'manual') : sendMessage(chatId, '❌ شهر پیدا نشد. مثال: /weather madrid'); }
+    if (lower.startsWith('/chart')) { const key = normalizeCityKey(text.split(/\s+/)[1] || 'madrid'); return cities[key] ? sendChartToTelegram(chatId, key, 'manual') : sendMessage(chatId, '❌ شهر پیدا نشد. مثال: /chart tehran'); }
+    if (lower === '/all') return sendAllDailyReport(chatId, 'manual');
     if (lower.startsWith('/settime')) {
       const newTime = text.split(/\s+/)[1];
       if (!newTime || !/^\d{2}:\d{2}$/.test(newTime)) return sendMessage(chatId, '❌ فرمت درست: /settime 08:00');
@@ -525,8 +539,8 @@ app.delete('/api/admin/cities/:key', adminAuth, (req, res) => {
 app.get('/api/admin/users', adminAuth, (req, res) => res.json({ ok: true, users: Object.values(users).sort((a,b)=>String(b.lastSeen).localeCompare(String(a.lastSeen))) }));
 app.get('/api/admin/logs', adminAuth, (req, res) => res.json({ ok: true, logs: logs.slice().reverse() }));
 app.delete('/api/admin/logs', adminAuth, (req, res) => { logs = []; saveLogs(); res.json({ ok: true, logs }); });
-app.post('/api/admin/send-city', adminAuth, async (req, res) => { try { const key = normalizeCityKey(req.body.city || 'madrid'); await sendWeatherToTelegram(DEFAULT_CHAT_ID, key); res.json({ ok: true, sent: key }); } catch (err) { res.status(500).json({ ok: false, error: err.message }); } });
-app.post('/api/admin/send-now', adminAuth, async (req, res) => { try { await sendAllDailyReport(DEFAULT_CHAT_ID); res.json({ ok: true, message: 'Daily report sent' }); } catch (err) { res.status(500).json({ ok: false, error: err.message }); } });
+app.post('/api/admin/send-city', adminAuth, async (req, res) => { try { const key = normalizeCityKey(req.body.city || 'madrid'); await sendWeatherToTelegram(DEFAULT_CHAT_ID, key, 'manual'); res.json({ ok: true, sent: key }); } catch (err) { res.status(500).json({ ok: false, error: err.message }); } });
+app.post('/api/admin/send-now', adminAuth, async (req, res) => { try { await sendAllDailyReport(DEFAULT_CHAT_ID, 'manual'); res.json({ ok: true, message: 'Daily report sent' }); } catch (err) { res.status(500).json({ ok: false, error: err.message }); } });
 app.post('/api/admin/test-alerts', adminAuth, async (req, res) => { try { await checkRealTimeAlerts(); res.json({ ok: true, message: 'Alert check executed' }); } catch (err) { res.status(500).json({ ok: false, error: err.message }); } });
 
 app.get('/map', (req, res) => res.sendFile(path.join(__dirname, 'public', 'map.html')));

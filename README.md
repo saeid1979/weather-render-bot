@@ -66,3 +66,23 @@ Telegram commands:
 
 ## Click anywhere on map
 در صفحه `/map` علاوه بر چهار شهر ثبت‌شده، با کلیک روی هر نقطه از نقشه، مختصات همان نقطه خوانده می‌شود و گزارش آب‌وهوا، بارندگی، باد، UV و AQI نمایش داده می‌شود.
+
+## Update: manual Telegram report range
+
+Manual Telegram requests now use a dynamic time range:
+
+- `/weather madrid`
+- `/chart tehran`
+- `/all`
+- city buttons in `/menu`
+- chart buttons in `/menu`
+- manual send from admin panel
+
+These requests calculate weather from the current hour in `TIMEZONE` until 24:00 of the same day.
+
+The automatic daily report still uses the scheduled daily report logic and checks the day from 08:00 to 24:00.
+
+Examples:
+
+- If the user asks at 11:20, the bot checks 11:00 to 24:00.
+- If the user asks at 18:45, the bot checks 18:00 to 24:00.
