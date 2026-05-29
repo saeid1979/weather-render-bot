@@ -1,58 +1,150 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Weather Bot Admin</title>
-  <link rel="stylesheet" href="/styles.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Weather Telegram Bot Admin</title>
+  <link rel="stylesheet" href="/styles.css"/>
 </head>
 <body>
-  <main class="container">
-    <section id="login" class="card">
-      <h1>پنل مدیریت بات هواشناسی</h1>
-      <input id="password" type="password" placeholder="ADMIN_PASSWORD" />
-      <button onclick="login()">ورود</button>
-      <p class="muted">رمز همان ADMIN_PASSWORD در Render است.</p>
+  <div class="container">
+    <header>
+      <h1>🌤 پنل مدیریت بات هواشناسی</h1>
+      <p>مدیریت شهرها، هشدارها، کاربران، لاگ‌ها و زمان ارسال روزانه</p>
+    </header>
+
+    <section class="card login-card">
+      <h2>ورود مدیر</h2>
+      <div class="row">
+        <input id="password" type="password" placeholder="ADMIN_PASSWORD">
+        <button onclick="loadAll()">ورود / بارگذاری پنل</button>
+      </div>
+      <p class="hint">رمز همان مقدار ADMIN_PASSWORD در Render است.</p>
     </section>
 
-    <section id="admin" class="hidden">
-      <div class="topbar">
-        <h1>داشبورد مدیریت</h1>
-        <a href="/map" target="_blank">🗺 نقشه زنده</a>
+    <nav class="tabs">
+      <button onclick="showTab('settings')">⚙ تنظیمات</button>
+      <button onclick="showTab('cities')">🏙 شهرها</button>
+      <button onclick="showTab('alerts')">🚨 هشدارها</button>
+      <button onclick="showTab('users')">👥 کاربران</button>
+      <button onclick="showTab('logs')">📜 لاگ‌ها</button>
+      <button onclick="showTab('quick')">⚡ عملیات سریع</button>
+    </nav>
+
+    <section id="tab-settings" class="tab card">
+      <h2>⚙ تنظیمات عمومی</h2>
+      <div class="form-grid">
+        <label>ساعت ارسال روزانه <input id="sendTime" type="time"></label>
+        <label>حد هشدار بارندگی (%) <input id="rainThreshold" type="number"></label>
+        <label>هشدار باد شدید (km/h) <input id="windWarningKmh" type="number"></label>
+        <label>هشدار UV <input id="uvWarning" type="number"></label>
+        <label>هشدار گرما (°C) <input id="heatWarningC" type="number"></label>
+        <label>هشدار سرما (°C) <input id="coldWarningC" type="number"></label>
+        <label>Cooldown هشدار فوری، دقیقه <input id="alertCooldownMinutes" type="number"></label>
       </div>
-      <div class="grid">
-        <section class="card">
-          <h2>ارسال پیام همگانی</h2>
-          <textarea id="broadcastText" placeholder="متن پیام برای همه کاربران فعال"></textarea>
-          <button onclick="sendBroadcast()">ارسال همگانی</button>
-          <div id="broadcastResult"></div>
-        </section>
-        <section class="card">
-          <h2>افزودن / ویرایش کاربر</h2>
-          <input id="u_chatId" placeholder="Chat ID" />
-          <input id="u_firstName" placeholder="Name" />
-          <input id="u_username" placeholder="Username" />
-          <select id="u_language"><option value="fa">fa</option><option value="es">es</option><option value="ar">ar</option></select>
-          <select id="u_city"><option value="madrid">madrid</option><option value="salamanca">salamanca</option><option value="tehran">tehran</option><option value="ardabil">ardabil</option></select>
-          <input id="u_sendTime" value="08:00" />
-          <input id="u_rain" value="50" />
-          <label><input type="checkbox" id="u_admin" /> Admin</label>
-          <button onclick="saveUser()">ذخیره کاربر</button>
-        </section>
+      <div class="checks">
+        <label><input id="dailyReport" type="checkbox"> گزارش روزانه فعال باشد</label>
+        <label><input id="realTimeAlerts" type="checkbox"> هشدار فوری فعال باشد</label>
       </div>
-      <section class="card">
-        <h2>کاربران</h2>
+      <button onclick="saveSettings()">ذخیره تنظیمات</button>
+    </section>
+
+    <section id="tab-cities" class="tab card hidden">
+      <h2>🏙 مدیریت شهرها</h2>
+      <p class="hint">برای افزودن شهر جدید، مختصات latitude و longitude لازم است.</p>
+      <div class="form-grid">
+        <label>Key انگلیسی، مثال valencia <input id="cityKey" placeholder="valencia"></label>
+        <label>نام انگلیسی <input id="cityName" placeholder="Valencia, Spain"></label>
+        <label>نام فارسی <input id="cityFa" placeholder="والنسیا، اسپانیا"></label>
+        <label>نام اسپانیایی <input id="cityEs" placeholder="Valencia, España"></label>
+        <label>نام عربی <input id="cityAr" placeholder="فالنسيا، إسبانيا"></label>
+        <label>Latitude <input id="cityLat" type="number" step="any" placeholder="39.4699"></label>
+        <label>Longitude <input id="cityLon" type="number" step="any" placeholder="-0.3763"></label>
+      </div>
+      <button onclick="addCity()">افزودن / ویرایش شهر</button>
+      <h3>شهرهای فعال برای گزارش روزانه</h3>
+      <div id="cities"></div>
+      <button onclick="saveSettings()">ذخیره شهرهای فعال</button>
+      <div id="cityList" class="table-wrap"></div>
+    </section>
+
+    <section id="tab-alerts" class="tab card hidden">
+      <h2>🚨 تنظیم هشدارها</h2>
+      <p>هشدار فوری هر ۳۰ دقیقه بررسی می‌شود و اگر از حدهای تعیین‌شده عبور کند پیام می‌فرستد.</p>
+      <ul class="nice-list">
+        <li>بارندگی بالاتر از حد Rain Threshold</li>
+        <li>باد شدید بالاتر از Wind Warning</li>
+        <li>UV بالا</li>
+        <li>گرمای شدید یا سرمای شدید</li>
+        <li>کیفیت هوای ناسالم، AQI بالای 101</li>
+      </ul>
+      <button onclick="testAlerts()">اجرای تست هشدار فوری</button>
+    </section>
+
+    <section id="tab-users" class="tab card hidden">
+      <h2>👥 کاربران تلگرام</h2>
+      <p class="hint">کاربر با /start خودکار ثبت می‌شود. همچنین می‌توانی دستی Chat ID را اضافه کنی.</p>
+      <div class="form-grid">
+        <label>Bot
+          <select id="userBotKey">
+            <option value="main">main</option>
+          </select>
+        </label>
+        <label>Chat ID <input id="userChatId" placeholder="123456789"></label>
+        <label>نام <input id="userFirstName" placeholder="Saeid"></label>
+        <label>Username <input id="userUsername" placeholder="username بدون @"></label>
+        <label>زبان
+          <select id="userLanguage">
+            <option value="fa">فارسی</option>
+            <option value="es">Español</option>
+            <option value="ar">العربية</option>
+          </select>
+        </label>
+        <label>شهر پیش‌فرض <input id="userCity" placeholder="madrid"></label>
+        <label>ساعت ارسال <input id="userSendTime" type="time" value="08:00"></label>
+        <label>حد بارندگی (%) <input id="userRainThreshold" type="number" value="50"></label>
+        <label><input id="userIsAdmin" type="checkbox"> مدیر باشد</label>
+      </div>
+      <div class="row">
+        <button onclick="saveUser()">افزودن / ویرایش کاربر</button>
         <button onclick="loadUsers()">بروزرسانی کاربران</button>
-        <div class="table-wrap"><table id="usersTable"></table></div>
-      </section>
-      <section class="card">
-        <h2>لاگ‌ها</h2>
+      </div>
+      <h3>ارسال پیام همگانی</h3>
+      <label>ارسال برای کدام بات؟
+        <select id="broadcastBotKey"><option value="">همه بات‌ها</option></select>
+      </label>
+      <textarea id="broadcastText rows="4" placeholder="متن پیام برای همه کاربران فعال"></textarea>
+      <button onclick="broadcast()">ارسال همگانی</button>
+      <div id="broadcastResults" class="table-wrap"></div>
+      <div id="usersBox" class="table-wrap"></div>
+    </section>
+
+    <section id="tab-logs" class="tab card hidden">
+      <h2>📜 لاگ‌ها</h2>
+      <div class="row">
         <button onclick="loadLogs()">بروزرسانی لاگ‌ها</button>
         <button class="danger" onclick="clearLogs()">پاک کردن لاگ‌ها</button>
-        <div class="table-wrap"><table id="logsTable"></table></div>
-      </section>
+      </div>
+      <div id="logsBox" class="table-wrap"></div>
     </section>
-  </main>
+
+    <section id="tab-quick" class="tab card hidden">
+      <h2>⚡ عملیات سریع</h2>
+      <div class="grid-actions">
+        <button onclick="sendNow()">ارسال گزارش همه شهرها همین حالا</button>
+        <button onclick="sendCityNow()">ارسال گزارش شهر انتخابی</button>
+        <select id="quickCity"></select><select id="quickBotKey"><option value="">بات پیش‌فرض</option></select>
+        <a class="button" href="/api/set-webhook" target="_blank">فعال‌سازی Webhook</a>
+        <a class="button" href="/api/report-preview?city=madrid" target="_blank">پیش‌نمایش گزارش مادرید</a>
+        <a class="button" href="/api/chart?city=tehran" target="_blank">نمودار تهران</a>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>خروجی سیستم</h2>
+      <pre id="output">برای شروع ADMIN_PASSWORD را وارد کن و روی بارگذاری پنل بزن.</pre>
+    </section>
+  </div>
   <script src="/admin.js"></script>
 </body>
 </html>

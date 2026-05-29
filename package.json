@@ -1,6 +1,7 @@
 {
-  "name": "weather-render-bot-broadcast-fix",
-  "version": "3.1.0",
+  "name": "weather-render-telegram-ai-admin",
+  "version": "3.0.0",
+  "description": "Weather Telegram Bot with real-time alerts, AI-like summaries, custom send time and admin panel for Render",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -10,6 +11,7 @@
   },
   "dependencies": {
     "axios": "^1.7.9",
+    "chartjs-node-canvas": "^5.0.0",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",

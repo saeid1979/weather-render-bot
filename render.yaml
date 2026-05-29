@@ -1,13 +1,7 @@
 services:
   - type: web
     name: weather-render-bot
-    runtime: node
+    env: node
     buildCommand: npm install
     startCommand: npm start
-    envVars:
-      - key: TIMEZONE
-        value: Europe/Madrid
-      - key: RAIN_THRESHOLD
-        value: 50
-      - key: ENABLE_INTERNAL_CRON
-        value: true
+    autoDeploy: true
