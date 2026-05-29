@@ -1,353 +1,197 @@
-require('dotenv').config();
-
-const express = require('express');
-const axios = require('axios');
-const cors = require('cors');
-const cron = require('node-cron');
+require("dotenv").config();
+const express = require("express");
+const axios = require("axios");
+const cron = require("node-cron");
+const cors = require("cors");
 
 const app = express();
 app.use(cors());
-app.use(express.json());
-app.use(express.static('public'));
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true }));
+app.use(express.static("public"));
 
-const PORT = process.env.PORT || 10000;
-const TIMEZONE = process.env.TIMEZONE || 'Europe/Madrid';
-const RAIN_THRESHOLD = Number(process.env.RAIN_THRESHOLD || 50);
-const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const DEFAULT_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
-const PUBLIC_URL = (process.env.PUBLIC_URL || '').replace(/\/$/, '');
-const CRON_SECRET = process.env.CRON_SECRET || 'change-this-secret-key';
-const ENABLE_INTERNAL_CRON = String(process.env.ENABLE_INTERNAL_CRON || 'true').toLowerCase() === 'true';
+const PUBLIC_URL = process.env.PUBLIC_URL;
+const TIMEZONE = process.env.TIMEZONE || "Europe/Madrid";
+const RAIN_THRESHOLD = Number(process.env.RAIN_THRESHOLD || 50);
+const UV_WARNING = Number(process.env.UV_WARNING || 7);
+const WIND_WARNING_KMH = Number(process.env.WIND_WARNING_KMH || 45);
+const ENABLE_INTERNAL_CRON = String(process.env.ENABLE_INTERNAL_CRON || "true").toLowerCase() === "true";
 
-const CITIES = {
-  salamanca: { key: 'salamanca', fa: 'سالامانکا', en: 'Salamanca, Spain', lat: 40.9701, lon: -5.6635 },
-  madrid: { key: 'madrid', fa: 'مادرید', en: 'Madrid, Spain', lat: 40.4168, lon: -3.7038 },
-  tehran: { key: 'tehran', fa: 'تهران', en: 'Tehran, Iran', lat: 35.6892, lon: 51.3890 },
-  ardabil: { key: 'ardabil', fa: 'اردبیل', en: 'Ardabil, Iran', lat: 38.2498, lon: 48.2933 }
+const cities = {
+  salamanca: { id:"salamanca", label:"Salamanca 🇪🇸", name:"Salamanca, Spain", lat:40.9701, lon:-5.6635, timezone:"Europe/Madrid" },
+  madrid: { id:"madrid", label:"Madrid 🇪🇸", name:"Madrid, Spain", lat:40.4168, lon:-3.7038, timezone:"Europe/Madrid" },
+  tehran: { id:"tehran", label:"Tehran 🇮🇷", name:"Tehran, Iran", lat:35.6892, lon:51.3890, timezone:"Asia/Tehran" },
+  ardabil: { id:"ardabil", label:"Ardabil 🇮🇷", name:"Ardabil, Iran", lat:38.2498, lon:48.2933, timezone:"Asia/Tehran" },
 };
 
-function cityByInput(input = '') {
-  const value = String(input).trim().toLowerCase();
-  return CITIES[value] || Object.values(CITIES).find(c =>
-    c.en.toLowerCase().includes(value) || c.fa.includes(value)
-  );
-}
-
-function todayISOForMadrid() {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: TIMEZONE,
-    year: 'numeric', month: '2-digit', day: '2-digit'
-  }).formatToParts(new Date()).reduce((acc, p) => ({ ...acc, [p.type]: p.value }), {});
-  return `${parts.year}-${parts.month}-${parts.day}`;
-}
-
-function formatHour(iso) {
-  return new Intl.DateTimeFormat('fa-IR', {
-    timeZone: TIMEZONE,
-    hour: '2-digit', minute: '2-digit', hour12: false
-  }).format(new Date(iso));
-}
-
-async function getWeather(cityKey) {
-  const city = typeof cityKey === 'string' ? cityByInput(cityKey) : cityKey;
-  if (!city) throw new Error('City not found');
-
-  const hourlyParams = [
-    'temperature_2m',
-    'apparent_temperature',
-    'relative_humidity_2m',
-    'precipitation_probability',
-    'wind_speed_10m',
-    'uv_index',
-    'weather_code'
-  ].join(',');
-
-  const dailyParams = [
-    'temperature_2m_max',
-    'temperature_2m_min',
-    'precipitation_probability_max',
-    'sunrise',
-    'sunset',
-    'uv_index_max',
-    'wind_speed_10m_max'
-  ].join(',');
-
-  const forecastUrl = 'https://api.open-meteo.com/v1/forecast';
-  const airUrl = 'https://air-quality-api.open-meteo.com/v1/air-quality';
-
-  const [forecastRes, airRes] = await Promise.all([
-    axios.get(forecastUrl, {
-      params: {
-        latitude: city.lat,
-        longitude: city.lon,
-        hourly: hourlyParams,
-        daily: dailyParams,
-        timezone: TIMEZONE,
-        forecast_days: 1
-      }
-    }),
-    axios.get(airUrl, {
-      params: {
-        latitude: city.lat,
-        longitude: city.lon,
-        hourly: 'european_aqi,pm10,pm2_5',
-        timezone: TIMEZONE,
-        forecast_days: 1
-      }
-    }).catch(() => ({ data: null }))
-  ]);
-
-  const data = forecastRes.data;
-  const air = airRes.data;
-  const targetDate = todayISOForMadrid();
-
-  const hours = data.hourly.time.map((t, i) => ({
-    time: t,
-    hour: Number(t.slice(11, 13)),
-    temperature: data.hourly.temperature_2m[i],
-    feelsLike: data.hourly.apparent_temperature[i],
-    humidity: data.hourly.relative_humidity_2m[i],
-    rain: data.hourly.precipitation_probability[i],
-    wind: data.hourly.wind_speed_10m[i],
-    uv: data.hourly.uv_index[i],
-    code: data.hourly.weather_code[i],
-    aqi: air?.hourly?.european_aqi?.[i] ?? null,
-    pm25: air?.hourly?.pm2_5?.[i] ?? null,
-    pm10: air?.hourly?.pm10?.[i] ?? null
-  })).filter(x => x.time.startsWith(targetDate) && x.hour >= 8 && x.hour <= 23);
-
-  const rainHighHours = hours.filter(h => Number(h.rain) >= RAIN_THRESHOLD);
-  const maxRain = Math.max(...hours.map(h => Number(h.rain || 0)));
-  const maxWind = Math.max(...hours.map(h => Number(h.wind || 0)));
-  const maxUv = Math.max(...hours.map(h => Number(h.uv || 0)));
-  const avgHumidity = Math.round(hours.reduce((s, h) => s + Number(h.humidity || 0), 0) / Math.max(hours.length, 1));
-  const avgAqiValues = hours.map(h => h.aqi).filter(v => v !== null && v !== undefined);
-  const avgAqi = avgAqiValues.length ? Math.round(avgAqiValues.reduce((a, b) => a + b, 0) / avgAqiValues.length) : null;
-
-  return {
-    city,
-    date: targetDate,
-    daily: {
-      maxTemp: data.daily.temperature_2m_max[0],
-      minTemp: data.daily.temperature_2m_min[0],
-      maxRain: data.daily.precipitation_probability_max[0],
-      sunrise: data.daily.sunrise[0]?.slice(11, 16),
-      sunset: data.daily.sunset[0]?.slice(11, 16),
-      maxUv: data.daily.uv_index_max[0],
-      maxWind: data.daily.wind_speed_10m_max[0]
-    },
-    hours,
-    summary: { rainHighHours, maxRain, maxWind, maxUv, avgHumidity, avgAqi }
+function normalizeCity(input) {
+  if (!input) return null;
+  const clean = String(input).trim().toLowerCase()
+    .replace("/", "").replace("weather_", "").replace("chart_", "").replace("city_", "");
+  const aliases = {
+    sala:"salamanca", salamanca:"salamanca",
+    mad:"madrid", madrid:"madrid",
+    tehran:"tehran", teheran:"tehran", "تهران":"tehran",
+    ardabil:"ardabil", ardebil:"ardabil", "اردبیل":"ardabil"
   };
-}
-
-function buildTextReport(weather) {
-  const { city, date, daily, summary } = weather;
-  const rainLines = summary.rainHighHours.length
-    ? summary.rainHighHours.map(h => `⏰ ${h.time.slice(11, 16)} → ${h.rain}%`).join('\n')
-    : '✅ از ساعت 08:00 تا 24:00 احتمال بارندگی بالای حد تعیین‌شده دیده نشد.';
-
-  const alerts = [];
-  if (summary.maxRain >= RAIN_THRESHOLD) alerts.push(`🌧 احتمال بارندگی بالا: ${summary.maxRain}%`);
-  if (summary.maxWind >= 45) alerts.push(`💨 باد نسبتاً شدید: ${Math.round(summary.maxWind)} km/h`);
-  if (summary.maxUv >= 7) alerts.push(`☀️ UV بالا: ${summary.maxUv}`);
-  if (summary.avgAqi && summary.avgAqi >= 100) alerts.push(`😷 کیفیت هوا نامناسب: AQI ${summary.avgAqi}`);
-
-  const advice = [];
-  if (summary.maxRain >= RAIN_THRESHOLD) advice.push('☂ چتر همراه داشته باشید.');
-  if (summary.maxWind >= 45) advice.push('🏍 برای موتور یا دوچرخه احتیاط کنید.');
-  if (summary.maxUv >= 7) advice.push('🧴 ضدآفتاب و عینک آفتابی مفید است.');
-  if (!advice.length) advice.push('✅ شرایط کلی امروز عادی است.');
-
-  return `🌤 گزارش هوشمند آب‌وهوا\n📍 ${city.fa} - ${city.en}\n📅 تاریخ: ${date}\n⏱ بازه بررسی: 08:00 تا 24:00\n\n🌡 دما: ${daily.minTemp}°C تا ${daily.maxTemp}°C\n🥵 دمای محسوس، رطوبت و باد به‌صورت ساعتی بررسی شدند.\n💧 میانگین رطوبت: ${summary.avgHumidity}%\n💨 بیشترین باد: ${Math.round(summary.maxWind)} km/h\n☀️ بیشترین UV: ${summary.maxUv}\n🌅 طلوع: ${daily.sunrise || '-'}\n🌇 غروب: ${daily.sunset || '-'}\n😷 میانگین کیفیت هوا: ${summary.avgAqi ?? 'نامشخص'}\n\n🌧 ساعت‌های احتمال بارندگی بالای ${RAIN_THRESHOLD}%:\n${rainLines}\n\n${alerts.length ? '⚠️ هشدارها:\n' + alerts.join('\n') : '✅ هشدار جدی ثبت نشد.'}\n\n📌 پیشنهاد امروز:\n${advice.join('\n')}`;
-}
-
-function quickChartUrl(weather) {
-  const labels = weather.hours.map(h => h.time.slice(11, 16));
-  const temps = weather.hours.map(h => h.temperature);
-  const rain = weather.hours.map(h => h.rain);
-  const wind = weather.hours.map(h => h.wind);
-  const chart = {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [
-        { label: 'Temp °C', data: temps, borderColor: 'red', fill: false },
-        { label: 'Rain %', data: rain, borderColor: 'blue', fill: false },
-        { label: 'Wind km/h', data: wind, borderColor: 'green', fill: false }
-      ]
-    },
-    options: {
-      title: { display: true, text: `${weather.city.en} | 08:00-24:00` },
-      legend: { position: 'bottom' },
-      scales: { yAxes: [{ ticks: { beginAtZero: true } }] }
-    }
-  };
-  return `https://quickchart.io/chart?width=900&height=500&c=${encodeURIComponent(JSON.stringify(chart))}`;
+  return aliases[clean] || clean;
 }
 
 async function telegram(method, payload) {
-  if (!TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing');
-  const url = `https://api.telegram.org/bot${TOKEN}/${method}`;
-  const res = await axios.post(url, payload);
-  return res.data;
+  if (!BOT_TOKEN) throw new Error("TELEGRAM_BOT_TOKEN is missing");
+  const { data } = await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, payload);
+  return data;
+}
+async function sendMessage(chatId, text, extra={}) {
+  return telegram("sendMessage", { chat_id:chatId, text, parse_mode:"HTML", disable_web_page_preview:true, ...extra });
+}
+async function sendPhoto(chatId, photo, caption="", extra={}) {
+  return telegram("sendPhoto", { chat_id:chatId, photo, caption, parse_mode:"HTML", ...extra });
+}
+function mainKeyboard() {
+  return { inline_keyboard: [
+    [{ text:"🌤 Salamanca", callback_data:"weather:salamanca" }, { text:"🌤 Madrid", callback_data:"weather:madrid" }],
+    [{ text:"🌤 Tehran", callback_data:"weather:tehran" }, { text:"🌤 Ardabil", callback_data:"weather:ardabil" }],
+    [{ text:"📊 Chart Salamanca", callback_data:"chart:salamanca" }, { text:"📊 Chart Madrid", callback_data:"chart:madrid" }],
+    [{ text:"📊 Chart Tehran", callback_data:"chart:tehran" }, { text:"📊 Chart Ardabil", callback_data:"chart:ardabil" }],
+    [{ text:"🌍 All cities", callback_data:"all" }]
+  ]};
+}
+function helpText() {
+  return ["🤖 <b>Weather Telegram Bot</b>","","دستورها:","/start","/menu","/all","/weather madrid","/chart tehran","","یا از دکمه‌های زیر شهر را انتخاب کن."].join("\n");
 }
 
-function menuKeyboard() {
-  return {
-    inline_keyboard: [
-      [
-        { text: '🌤 Salamanca', callback_data: 'weather:salamanca' },
-        { text: '🌤 Madrid', callback_data: 'weather:madrid' }
-      ],
-      [
-        { text: '🌤 Tehran', callback_data: 'weather:tehran' },
-        { text: '🌤 Ardabil', callback_data: 'weather:ardabil' }
-      ],
-      [
-        { text: '📊 Chart Salamanca', callback_data: 'chart:salamanca' },
-        { text: '📊 Chart Madrid', callback_data: 'chart:madrid' }
-      ],
-      [
-        { text: '🌍 گزارش همه شهرها', callback_data: 'all' }
-      ]
-    ]
-  };
-}
-
-async function sendCityReport(chatId, cityKey, withChart = true) {
-  const weather = await getWeather(cityKey);
-  await telegram('sendMessage', {
-    chat_id: chatId,
-    text: buildTextReport(weather),
-    reply_markup: menuKeyboard()
+async function fetchWeather(cityKey) {
+  const city = cities[cityKey];
+  if (!city) throw new Error(`City not found: ${cityKey}`);
+  const p = new URLSearchParams({
+    latitude: city.lat, longitude: city.lon, timezone: city.timezone || TIMEZONE,
+    current:"temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m,weather_code",
+    hourly:"temperature_2m,apparent_temperature,precipitation_probability,relative_humidity_2m,wind_speed_10m,uv_index",
+    daily:"temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset,uv_index_max,wind_speed_10m_max",
+    forecast_days:"1"
   });
-  if (withChart) {
-    await telegram('sendPhoto', {
-      chat_id: chatId,
-      photo: quickChartUrl(weather),
-      caption: `📊 نمودار دما، بارندگی و باد برای ${weather.city.fa}`
-    });
+  const { data: weather } = await axios.get(`https://api.open-meteo.com/v1/forecast?${p.toString()}`, { timeout:20000 });
+  let airQuality = null;
+  try {
+    const aq = new URLSearchParams({ latitude:city.lat, longitude:city.lon, timezone:city.timezone || TIMEZONE, current:"european_aqi,pm10,pm2_5", forecast_days:"1" });
+    const { data } = await axios.get(`https://air-quality-api.open-meteo.com/v1/air-quality?${aq.toString()}`, { timeout:15000 });
+    airQuality = data.current || null;
+  } catch(e) {}
+  return { city, weather, airQuality };
+}
+function todayWindowIndexes(times) {
+  const out=[]; for (let i=0;i<times.length;i++){ const h=Number(String(times[i]).slice(11,13)); if(h>=8 && h<=23) out.push(i); } return out;
+}
+function fmtHour(t){ return String(t).slice(11,16); }
+function avg(arr){ return arr.length ? Math.round(arr.reduce((a,b)=>a+b,0)/arr.length) : null; }
+function aqiLabel(aqi){ if(aqi==null) return "نامشخص"; if(aqi<=20) return "خیلی خوب"; if(aqi<=40) return "خوب"; if(aqi<=60) return "متوسط"; if(aqi<=80) return "ضعیف"; if(aqi<=100) return "ناسالم"; return "خیلی ناسالم"; }
+
+function createReportText(bundle) {
+  const {city, weather, airQuality} = bundle;
+  const h = weather.hourly || {}, d = weather.daily || {}, c = weather.current || {};
+  const idx = todayWindowIndexes(h.time || []);
+  const pick = (name) => idx.map(i => h[name]?.[i]).filter(v => typeof v === "number");
+  const temps=pick("temperature_2m"), feels=pick("apparent_temperature"), rains=pick("precipitation_probability"), winds=pick("wind_speed_10m"), hums=pick("relative_humidity_2m"), uvs=pick("uv_index");
+  const rainHours = idx.map(i=>({time:h.time[i], rain:h.precipitation_probability?.[i]})).filter(x=>typeof x.rain==="number" && x.rain>RAIN_THRESHOLD);
+  const maxRain = rains.length ? Math.max(...rains) : d.precipitation_probability_max?.[0];
+  const maxWind = winds.length ? Math.max(...winds) : d.wind_speed_10m_max?.[0];
+  const maxUv = uvs.length ? Math.max(...uvs) : d.uv_index_max?.[0];
+  const minTemp = temps.length ? Math.min(...temps) : d.temperature_2m_min?.[0];
+  const maxTemp = temps.length ? Math.max(...temps) : d.temperature_2m_max?.[0];
+  const maxFeel = feels.length ? Math.max(...feels) : c.apparent_temperature;
+  const sunrise = d.sunrise?.[0] ? String(d.sunrise[0]).slice(11,16) : "نامشخص";
+  const sunset = d.sunset?.[0] ? String(d.sunset[0]).slice(11,16) : "نامشخص";
+  const warnings=[];
+  if(rainHours.length) warnings.push(`☔ احتمال بارندگی بالای ${RAIN_THRESHOLD}%`);
+  if(typeof maxWind==="number" && maxWind>=WIND_WARNING_KMH) warnings.push("💨 باد نسبتاً شدید");
+  if(typeof maxUv==="number" && maxUv>=UV_WARNING) warnings.push("☀️ UV بالا");
+  if(airQuality?.european_aqi>=80) warnings.push("😷 کیفیت هوا ضعیف یا ناسالم");
+
+  let text = `🌤 <b>گزارش آب‌وهوا: ${city.name}</b>\n🕗 بازه بررسی: 08:00 تا 24:00\n\n`;
+  text += `🌡 دما: ${minTemp ?? "-"}°C تا ${maxTemp ?? "-"}°C\n`;
+  text += `🥵 دمای محسوس بیشینه: ${maxFeel ?? "-"}°C\n`;
+  text += `🌧 بیشترین احتمال بارندگی: ${maxRain ?? "-"}%\n`;
+  text += `💨 بیشترین سرعت باد: ${maxWind ?? "-"} km/h\n`;
+  text += `💧 رطوبت میانگین: ${avg(hums) ?? c.relative_humidity_2m ?? "-"}%\n`;
+  text += `☀️ UV بیشینه: ${maxUv ?? "-"}\n🌅 طلوع: ${sunrise}\n🌇 غروب: ${sunset}\n`;
+  if(airQuality){ text += `😷 AQI اروپا: ${airQuality.european_aqi ?? "-"} (${aqiLabel(airQuality.european_aqi)})\nPM2.5: ${airQuality.pm2_5 ?? "-"} | PM10: ${airQuality.pm10 ?? "-"}\n`; }
+  if(rainHours.length) text += `\n⚠️ <b>ساعت‌های بارندگی بالای ${RAIN_THRESHOLD}%:</b>\n` + rainHours.map(x=>`⏰ ${fmtHour(x.time)} → ${x.rain}%`).join("\n") + "\n";
+  else text += `\n✅ در بازه 08:00 تا 24:00 احتمال بارندگی بالای ${RAIN_THRESHOLD}% دیده نشد.\n`;
+  if(warnings.length) text += `\n🚨 <b>هشدارها:</b>\n${warnings.join("\n")}\n`;
+  text += "\n🧠 <b>خلاصه:</b>\n";
+  text += rainHours.length ? `امروز در ${city.label} از ساعت‌های ${rainHours.map(x=>fmtHour(x.time)).join(", ")} احتمال بارندگی بالاست.` : `امروز در ${city.label} وضعیت بارندگی مهمی در بازه روزانه دیده نمی‌شود.`;
+  return text;
+}
+function chartUrl(bundle) {
+  const {city, weather} = bundle, h=weather.hourly||{}, idx=todayWindowIndexes(h.time||[]);
+  const labels=idx.map(i=>fmtHour(h.time[i]));
+  const cfg={type:"line",data:{labels,datasets:[
+    {label:"Temp °C",data:idx.map(i=>h.temperature_2m?.[i]??null),borderColor:"rgb(255,99,132)",backgroundColor:"rgba(255,99,132,0.1)",yAxisID:"y",tension:.25},
+    {label:"Rain %",data:idx.map(i=>h.precipitation_probability?.[i]??null),borderColor:"rgb(54,162,235)",backgroundColor:"rgba(54,162,235,0.1)",yAxisID:"y1",tension:.25},
+    {label:"Wind km/h",data:idx.map(i=>h.wind_speed_10m?.[i]??null),borderColor:"rgb(75,192,192)",backgroundColor:"rgba(75,192,192,0.1)",yAxisID:"y",tension:.25}
+  ]},options:{plugins:{title:{display:true,text:`${city.name} | 08:00 - 24:00`},legend:{display:true,position:"bottom"}},scales:{y:{beginAtZero:true,position:"left",title:{display:true,text:"°C / km/h"}},y1:{beginAtZero:true,max:100,position:"right",grid:{drawOnChartArea:false},title:{display:true,text:"Rain %"}}}}};
+  return `https://quickchart.io/chart?width=900&height=500&format=png&c=${encodeURIComponent(JSON.stringify(cfg))}`;
+}
+async function sendWeatherReport(chatId, cityKey){
+  const key=normalizeCity(cityKey); if(!cities[key]) return sendMessage(chatId,"❌ شهر پیدا نشد. شهرهای مجاز: salamanca, madrid, tehran, ardabil");
+  const bundle=await fetchWeather(key);
+  return sendMessage(chatId, createReportText(bundle), {reply_markup:{inline_keyboard:[[{text:`📊 نمودار ${bundle.city.label}`, callback_data:`chart:${key}`}],[{text:"🔙 منو", callback_data:"menu"}]]}});
+}
+async function sendWeatherChart(chatId, cityKey){
+  const key=normalizeCity(cityKey); if(!cities[key]) return sendMessage(chatId,"❌ شهر پیدا نشد. شهرهای مجاز: salamanca, madrid, tehran, ardabil");
+  const bundle=await fetchWeather(key);
+  return sendPhoto(chatId, chartUrl(bundle), `📊 نمودار آب‌وهوا برای ${bundle.city.name}\n08:00 تا 24:00`, {reply_markup:{inline_keyboard:[[{text:`🌤 گزارش ${bundle.city.label}`, callback_data:`weather:${key}`}],[{text:"🔙 منو", callback_data:"menu"}]]}});
+}
+async function sendAllCitiesReport(chatId){
+  let text=`🌍 <b>گزارش روزانه همه شهرها</b>\n🕗 بازه بررسی: 08:00 تا 24:00\n\n`;
+  for(const key of Object.keys(cities)){
+    try{ const b=await fetchWeather(key); text += createReportText(b)+"\n\n----------------\n\n"; if(text.length>3300){ await sendMessage(chatId,text); text=""; } }
+    catch(e){ text += `❌ خطا در دریافت اطلاعات ${cities[key].name}\n\n`; }
   }
+  if(text.trim()) await sendMessage(chatId,text,{reply_markup:mainKeyboard()});
 }
 
-async function sendAllReports(chatId = DEFAULT_CHAT_ID, withChart = false) {
-  for (const key of Object.keys(CITIES)) {
-    await sendCityReport(chatId, key, withChart);
-  }
-}
+app.get("/api/health",(req,res)=>res.json({ok:true,service:"weather-render-telegram-bot",time:new Date().toISOString(),cities:Object.keys(cities)}));
+app.get("/api/report-preview",async(req,res)=>{try{const key=normalizeCity(req.query.city||"madrid"); if(!cities[key]) return res.status(404).json({ok:false,error:"City not found"}); res.type("text/plain").send(createReportText(await fetchWeather(key)));}catch(e){res.status(500).json({ok:false,error:e.message});}});
+app.get("/api/chart",async(req,res)=>{try{const key=normalizeCity(req.query.city||"madrid"); if(!cities[key]) return res.status(404).json({ok:false,error:"City not found"}); res.redirect(chartUrl(await fetchWeather(key)));}catch(e){res.status(500).json({ok:false,error:e.message});}});
+app.get("/api/send-telegram",async(req,res)=>{try{const chatId=req.query.chat_id||DEFAULT_CHAT_ID; if(!chatId) return res.status(500).json({ok:false,error:"TELEGRAM_CHAT_ID is missing"}); const key=normalizeCity(req.query.city||"all"); if(key==="all") await sendAllCitiesReport(chatId); else { await sendWeatherReport(chatId,key); await sendWeatherChart(chatId,key); } res.json({ok:true,sent:true,city:key});}catch(e){console.error("Send Telegram error:",e.response?.data||e.message); res.status(500).json({ok:false,error:e.response?.data||e.message});}});
+app.get("/api/set-webhook",async(req,res)=>{try{if(!PUBLIC_URL) return res.status(500).json({ok:false,error:"PUBLIC_URL is missing"}); const webhookUrl=`${PUBLIC_URL.replace(/\/$/,"")}/webhook`; const result=await telegram("setWebhook",{url:webhookUrl,allowed_updates:["message","callback_query"]}); res.json({ok:true,webhookUrl,telegram:result});}catch(e){console.error("Set webhook error:",e.response?.data||e.message); res.status(500).json({ok:false,error:e.response?.data||e.message});}});
+app.get("/api/webhook-info",async(req,res)=>{try{res.json({ok:true,telegram:await telegram("getWebhookInfo",{})});}catch(e){res.status(500).json({ok:false,error:e.response?.data||e.message});}});
 
-app.get('/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
-
-app.get('/api/report-preview', async (req, res) => {
-  try {
-    const city = req.query.city || 'salamanca';
-    const weather = await getWeather(city);
-    res.type('text/plain').send(buildTextReport(weather));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-app.get('/api/chart', async (req, res) => {
-  try {
-    const city = req.query.city || 'salamanca';
-    const weather = await getWeather(city);
-    res.redirect(quickChartUrl(weather));
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-app.get('/api/send-telegram', async (req, res) => {
-  try {
-    const city = req.query.city;
-    const chart = req.query.chart !== 'false';
-    if (city) await sendCityReport(DEFAULT_CHAT_ID, city, chart);
-    else await sendAllReports(DEFAULT_CHAT_ID, false);
-    res.json({ ok: true });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-app.get('/cron/daily', async (req, res) => {
-  if (req.query.key !== CRON_SECRET) return res.status(403).json({ ok: false, error: 'Forbidden' });
-  try {
-    await sendAllReports(DEFAULT_CHAT_ID, false);
-    res.json({ ok: true, message: 'Daily report sent' });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-app.get('/api/set-webhook', async (req, res) => {
-  try {
-    if (!PUBLIC_URL) throw new Error('PUBLIC_URL is missing');
-    const webhookUrl = `${PUBLIC_URL}/telegram/webhook`;
-    const result = await telegram('setWebhook', { url: webhookUrl });
-    res.json({ ok: true, webhookUrl, result });
-  } catch (e) {
-    res.status(500).json({ ok: false, error: e.message });
-  }
-});
-
-app.post('/telegram/webhook', async (req, res) => {
+app.post("/webhook", async (req,res)=>{
   res.sendStatus(200);
-  try {
-    const update = req.body;
-    if (update.callback_query) {
-      const cb = update.callback_query;
-      const chatId = cb.message.chat.id;
-      const [action, city] = String(cb.data || '').split(':');
-      await telegram('answerCallbackQuery', { callback_query_id: cb.id });
-      if (action === 'weather') await sendCityReport(chatId, city, false);
-      else if (action === 'chart') await sendCityReport(chatId, city, true);
-      else if (action === 'all') await sendAllReports(chatId, false);
-      return;
+  const update=req.body;
+  try{
+    if(update.callback_query){
+      const cb=update.callback_query, chatId=cb.message?.chat?.id, data=String(cb.data||"");
+      console.log("Callback data:", data);
+      await telegram("answerCallbackQuery",{callback_query_id:cb.id});
+      if(!chatId) return;
+      if(data==="menu") return sendMessage(chatId, helpText(), {reply_markup:mainKeyboard()});
+      if(data==="all") return sendAllCitiesReport(chatId);
+      const [action, rawCity]=data.split(":"); const cityKey=normalizeCity(rawCity);
+      if(!cities[cityKey]) return sendMessage(chatId, `❌ شهر پیدا نشد: ${rawCity || data}`);
+      if(action==="weather") return sendWeatherReport(chatId, cityKey);
+      if(action==="chart") return sendWeatherChart(chatId, cityKey);
+      return sendMessage(chatId,"❌ دستور دکمه نامعتبر است.");
     }
-
-    const msg = update.message;
-    if (!msg || !msg.chat) return;
-    const chatId = msg.chat.id;
-    const text = String(msg.text || '').trim();
-    const [cmd, arg] = text.split(/\s+/);
-
-    if (cmd === '/start' || cmd === '/menu') {
-      await telegram('sendMessage', {
-        chat_id: chatId,
-        text: 'سلام 👋\nاز منوی زیر شهر را انتخاب کنید یا دستور بفرستید:\n/weather madrid\n/chart tehran\n/all',
-        reply_markup: menuKeyboard()
-      });
-    } else if (cmd === '/weather') {
-      await sendCityReport(chatId, arg || 'salamanca', false);
-    } else if (cmd === '/chart') {
-      await sendCityReport(chatId, arg || 'salamanca', true);
-    } else if (cmd === '/all') {
-      await sendAllReports(chatId, false);
-    } else {
-      await telegram('sendMessage', {
-        chat_id: chatId,
-        text: 'دستور نامعتبر است. /menu را بفرستید.',
-        reply_markup: menuKeyboard()
-      });
+    if(update.message){
+      const chatId=update.message.chat.id, text=String(update.message.text||"").trim();
+      console.log("Message:", text);
+      if(text==="/start" || text==="/menu") return sendMessage(chatId, helpText(), {reply_markup:mainKeyboard()});
+      if(text==="/all") return sendAllCitiesReport(chatId);
+      if(text.startsWith("/weather")) return sendWeatherReport(chatId, text.split(/\s+/)[1] || "madrid");
+      if(text.startsWith("/chart")) return sendWeatherChart(chatId, text.split(/\s+/)[1] || "madrid");
+      return sendMessage(chatId, helpText(), {reply_markup:mainKeyboard()});
     }
-  } catch (e) {
-    console.error('Webhook error:', e.message);
-  }
+  }catch(e){ console.error("Webhook error:", e.response?.data || e.message); }
 });
-
-if (ENABLE_INTERNAL_CRON) {
-  cron.schedule('0 8 * * *', async () => {
-    try {
-      console.log('Running internal daily cron...');
-      await sendAllReports(DEFAULT_CHAT_ID, false);
-    } catch (e) {
-      console.error('Internal cron error:', e.message);
-    }
-  }, { timezone: TIMEZONE });
+if(ENABLE_INTERNAL_CRON){
+  cron.schedule("0 8 * * *", async()=>{ try{ if(!DEFAULT_CHAT_ID) return console.log("Daily report skipped: TELEGRAM_CHAT_ID is missing"); console.log("Running daily 08:00 weather report..."); await sendAllCitiesReport(DEFAULT_CHAT_ID); }catch(e){console.error("Daily cron error:",e.response?.data||e.message);} }, {timezone:TIMEZONE});
 }
-
-app.listen(PORT, () => {
-  console.log(`Weather Telegram Bot is running on port ${PORT}`);
-});
+app.get("/",(req,res)=>res.sendFile(__dirname+"/public/index.html"));
+const port=process.env.PORT || 3000;
+app.listen(port,()=>{ console.log(`Weather Telegram Bot is running on port ${port}`); console.log(`Cities: ${Object.keys(cities).join(", ")}`); });
