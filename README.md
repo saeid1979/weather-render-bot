@@ -1,22 +1,16 @@
-# Weather Render Telegram Bot - Full Admin Panel
+# Weather Render Bot + Full Admin Panel + Live Map
 
 قابلیت‌ها:
-
-- انتخاب شهر از داخل تلگرام
-- گزارش تصویری PNG
-- گزارش روزانه خودکار
-- هشدار فوری Real-Time Alert
+- بات تلگرام با دکمه‌های انتخاب شهر
+- گزارش متنی آب‌وهوا
+- نمودار تصویری PNG
+- هشدار فوری هر ۳۰ دقیقه
 - خلاصه هوشمند AI-like
-- تنظیم ساعت ارسال با `/settime 08:00`
+- تنظیم ساعت ارسال روزانه با `/settime 08:00`
 - پنل مدیریت وب
-- افزودن/حذف/ویرایش شهر
-- تنظیم حد هشدارها
-- مشاهده کاربران تلگرام
-- مشاهده و پاک کردن لاگ‌ها
+- نقشه زنده آب‌وهوا در `/map`
 
 ## Render Environment Variables
-
-در Render بخش Environment این موارد را وارد کنید:
 
 ```env
 TELEGRAM_BOT_TOKEN=your_bot_token
@@ -24,56 +18,47 @@ TELEGRAM_CHAT_ID=your_chat_id
 PUBLIC_URL=https://weather-render-bot.onrender.com
 TIMEZONE=Europe/Madrid
 RAIN_THRESHOLD=50
-WIND_WARNING_KMH=55
-UV_WARNING=7
-HEAT_WARNING_C=35
-COLD_WARNING_C=0
 ENABLE_INTERNAL_CRON=true
 ADMIN_PASSWORD=your_admin_password
 ```
 
-## Build / Start
+## Render Commands
 
-```text
-Build Command: npm install
-Start Command: npm start
+Build Command:
+```bash
+npm install
 ```
 
-## فعال‌سازی Webhook
+Start Command:
+```bash
+npm start
+```
 
-بعد از Deploy این لینک را باز کنید:
+## After Deploy
 
+Set webhook:
 ```text
 https://weather-render-bot.onrender.com/api/set-webhook
 ```
 
-## پنل مدیریت
-
+Admin panel:
 ```text
 https://weather-render-bot.onrender.com
 ```
 
-با مقدار `ADMIN_PASSWORD` وارد شوید.
+Live map:
+```text
+https://weather-render-bot.onrender.com/map
+```
 
-## دستورات تلگرام
-
+Telegram commands:
 ```text
 /start
 /menu
+/map
 /weather madrid
 /chart tehran
 /all
-/settings
 /settime 08:00
-/admin
-```
-
-## نکته امنیتی
-
-فایل `.env` نباید در GitHub باشد. اگر قبلاً commit شده، اجرا کنید:
-
-```bash
-git rm --cached .env
-git commit -m "remove env file"
-git push
+/settings
 ```
