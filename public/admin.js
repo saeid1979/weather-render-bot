@@ -146,15 +146,15 @@ async function loadUsers(){
       <td>${u.isActive === false ? 'غیرفعال' : 'فعال'}</td>
       <td>${u.isAdmin ? 'Admin' : ''}</td>
       <td>${u.lastSeen || ''}</td>
-      <td><button class="small" onclick="editUser('${u.chatId}')">ویرایش</button><button class="small danger" onclick="deleteUser('${u.chatId}')">غیرفعال</button></td>
+      <td><button class="small" onclick="editUser('${u.storageKey || ((u.botKey||'main')+':'+u.chatId)}')">ویرایش</button><button class="small danger" onclick="deleteUser('${u.chatId}','${u.botKey || 'main'}')">غیرفعال</button></td>
     </tr>`).join('');
     window.__users = data.users;
     $("usersBox").innerHTML = `<table><thead><tr><th>Bot</th><th>Chat ID</th><th>نام</th><th>Username</th><th>Lang</th><th>City</th><th>Time</th><th>Rain</th><th>Status</th><th>Role</th><th>Last Seen</th><th>عملیات</th></tr></thead><tbody>${rows}</tbody></table>`;
   }catch(e){ out(e); }
 }
 
-function editUser(chatId){
-  const u = (window.__users || []).find(x => String(x.chatId) === String(chatId));
+function editUser(storageKey){
+  const u = (window.__users || []).find(x => String(x.storageKey || ((x.botKey||'main')+':'+x.chatId)) === String(storageKey) || String(x.chatId) === String(storageKey));
   if(!u) return;
   if($("userBotKey")) $("userBotKey").value = u.botKey || 'main';
   $("userChatId").value = u.chatId || '';
@@ -188,9 +188,9 @@ async function saveUser(){
   }catch(e){ out(e); }
 }
 
-async function deleteUser(chatId){
-  if(!confirm(`کاربر ${chatId} غیرفعال شود؟`)) return;
-  try{ out(await api(`/api/admin/users/${chatId}`, {method:'DELETE'})); await loadUsers(); }
+async function deleteUser(chatId, botKey='main'){
+  if(!confirm(`کاربر ${botKey}:${chatId} غیرفعال شود؟`)) return;
+  try{ out(await api(`/api/admin/users/${chatId}?botKey=${encodeURIComponent(botKey)}`, {method:'DELETE'})); await loadUsers(); }
   catch(e){ out(e); }
 }
 

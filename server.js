@@ -722,6 +722,7 @@ app.post(['/webhook', '/webhook/:botKey'], async (req, res) => {
 
     if (lower === '/start' || lower === '/menu') return sendMainMenu(chatId, botKey);
     if (lower === '/help') return sendMessage(chatId, tr(lang, 'help'));
+    if (lower === '/language' || lower === '/lang') return sendMessage(chatId, '🌐 Language / Idioma / اللغة:', { reply_markup: { inline_keyboard: [[{ text: '🇮🇷 فارسی', callback_data: 'lang:fa' }, { text: '🇪🇸 Español', callback_data: 'lang:es' }, { text: '🇸🇦 العربية', callback_data: 'lang:ar' }]] } }, botKey);
     if (lower === '/mysettings' || lower === '/settings') return sendMessage(chatId, userSettingsText(chatId, botKey));
     if (lower === '/map') return sendMessage(chatId, `${tr(lang, 'mapLink')}\n${PUBLIC_URL ? PUBLIC_URL.replace(/\/$/, '') + '/map' : 'PUBLIC_URL is missing'}`);
     if (lower.startsWith('/weather')) {
