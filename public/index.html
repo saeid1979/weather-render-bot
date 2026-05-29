@@ -1,23 +1,80 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Weather Telegram Bot</title>
-  <link rel="stylesheet" href="/styles.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Weather Telegram Bot Admin</title>
+  <link rel="stylesheet" href="/styles.css"/>
 </head>
 <body>
-  <main class="card">
-    <h1>🌦 Weather Telegram Bot</h1>
-    <p>بات هواشناسی با انتخاب شهر، گزارش تصویری و ارسال روزانه ساعت ۸ صبح.</p>
-    <div class="grid">
-      <a href="/api/report-preview?city=salamanca">گزارش Salamanca</a>
-      <a href="/api/report-preview?city=madrid">گزارش Madrid</a>
-      <a href="/api/report-preview?city=tehran">گزارش Tehran</a>
-      <a href="/api/report-preview?city=ardabil">گزارش Ardabil</a>
-      <a href="/api/chart?city=madrid">نمودار Madrid</a>
-      <a href="/api/webhook-info">Webhook Info</a>
-    </div>
-  </main>
+  <div class="container">
+    <header>
+      <h1>🌤 پنل مدیریت بات هواشناسی</h1>
+      <p>Real-Time Alerts، گزارش هوشمند، زمان ارسال و تنظیمات شهرها</p>
+    </header>
+
+    <section class="card">
+      <h2>ورود مدیر</h2>
+      <div class="row">
+        <input id="password" type="password" placeholder="ADMIN_PASSWORD">
+        <button onclick="loadSettings()">ورود / دریافت تنظیمات</button>
+      </div>
+      <p class="hint">این رمز همان مقدار ADMIN_PASSWORD در Render است.</p>
+    </section>
+
+    <section class="grid">
+      <div class="card">
+        <h2>تنظیمات ارسال</h2>
+        <label>ساعت ارسال روزانه</label>
+        <input id="sendTime" type="time">
+
+        <label>حد هشدار بارندگی (%)</label>
+        <input id="rainThreshold" type="number">
+
+        <label>هشدار باد شدید (km/h)</label>
+        <input id="windWarningKmh" type="number">
+
+        <label>هشدار UV</label>
+        <input id="uvWarning" type="number">
+
+        <label>هشدار گرما (°C)</label>
+        <input id="heatWarningC" type="number">
+
+        <label>هشدار سرما (°C)</label>
+        <input id="coldWarningC" type="number">
+
+        <label>Cooldown هشدار فوری بر حسب دقیقه</label>
+        <input id="alertCooldownMinutes" type="number">
+
+        <div class="checks">
+          <label><input id="dailyReport" type="checkbox"> گزارش روزانه فعال</label>
+          <label><input id="realTimeAlerts" type="checkbox"> هشدار فوری فعال</label>
+        </div>
+
+        <button onclick="saveSettings()">ذخیره تنظیمات</button>
+      </div>
+
+      <div class="card">
+        <h2>شهرهای فعال</h2>
+        <div id="cities"></div>
+        <button onclick="saveSettings()">ذخیره شهرها</button>
+      </div>
+
+      <div class="card">
+        <h2>عملیات سریع</h2>
+        <button onclick="sendNow()">ارسال گزارش همین حالا</button>
+        <button onclick="testAlerts()">تست هشدار فوری</button>
+        <a class="button" href="/api/report-preview?city=madrid" target="_blank">پیش‌نمایش مادرید</a>
+        <a class="button" href="/api/chart?city=tehran" target="_blank">نمودار تهران</a>
+        <a class="button" href="/api/set-webhook" target="_blank">Set Webhook</a>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>خروجی</h2>
+      <pre id="output">منتظر عملیات...</pre>
+    </section>
+  </div>
+  <script src="/admin.js"></script>
 </body>
 </html>

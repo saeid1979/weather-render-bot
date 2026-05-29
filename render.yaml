@@ -2,6 +2,6 @@ services:
   - type: web
     name: weather-render-bot
     env: node
-    plan: free
     buildCommand: npm install
     startCommand: npm start
+    autoDeploy: true
