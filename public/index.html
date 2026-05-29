@@ -10,69 +10,105 @@
   <div class="container">
     <header>
       <h1>🌤 پنل مدیریت بات هواشناسی</h1>
-      <p>Real-Time Alerts، گزارش هوشمند، زمان ارسال و تنظیمات شهرها</p>
+      <p>مدیریت شهرها، هشدارها، کاربران، لاگ‌ها و زمان ارسال روزانه</p>
     </header>
 
-    <section class="card">
+    <section class="card login-card">
       <h2>ورود مدیر</h2>
       <div class="row">
         <input id="password" type="password" placeholder="ADMIN_PASSWORD">
-        <button onclick="loadSettings()">ورود / دریافت تنظیمات</button>
+        <button onclick="loadAll()">ورود / بارگذاری پنل</button>
       </div>
-      <p class="hint">این رمز همان مقدار ADMIN_PASSWORD در Render است.</p>
+      <p class="hint">رمز همان مقدار ADMIN_PASSWORD در Render است.</p>
     </section>
 
-    <section class="grid">
-      <div class="card">
-        <h2>تنظیمات ارسال</h2>
-        <label>ساعت ارسال روزانه</label>
-        <input id="sendTime" type="time">
+    <nav class="tabs">
+      <button onclick="showTab('settings')">⚙ تنظیمات</button>
+      <button onclick="showTab('cities')">🏙 شهرها</button>
+      <button onclick="showTab('alerts')">🚨 هشدارها</button>
+      <button onclick="showTab('users')">👥 کاربران</button>
+      <button onclick="showTab('logs')">📜 لاگ‌ها</button>
+      <button onclick="showTab('quick')">⚡ عملیات سریع</button>
+    </nav>
 
-        <label>حد هشدار بارندگی (%)</label>
-        <input id="rainThreshold" type="number">
-
-        <label>هشدار باد شدید (km/h)</label>
-        <input id="windWarningKmh" type="number">
-
-        <label>هشدار UV</label>
-        <input id="uvWarning" type="number">
-
-        <label>هشدار گرما (°C)</label>
-        <input id="heatWarningC" type="number">
-
-        <label>هشدار سرما (°C)</label>
-        <input id="coldWarningC" type="number">
-
-        <label>Cooldown هشدار فوری بر حسب دقیقه</label>
-        <input id="alertCooldownMinutes" type="number">
-
-        <div class="checks">
-          <label><input id="dailyReport" type="checkbox"> گزارش روزانه فعال</label>
-          <label><input id="realTimeAlerts" type="checkbox"> هشدار فوری فعال</label>
-        </div>
-
-        <button onclick="saveSettings()">ذخیره تنظیمات</button>
+    <section id="tab-settings" class="tab card">
+      <h2>⚙ تنظیمات عمومی</h2>
+      <div class="form-grid">
+        <label>ساعت ارسال روزانه <input id="sendTime" type="time"></label>
+        <label>حد هشدار بارندگی (%) <input id="rainThreshold" type="number"></label>
+        <label>هشدار باد شدید (km/h) <input id="windWarningKmh" type="number"></label>
+        <label>هشدار UV <input id="uvWarning" type="number"></label>
+        <label>هشدار گرما (°C) <input id="heatWarningC" type="number"></label>
+        <label>هشدار سرما (°C) <input id="coldWarningC" type="number"></label>
+        <label>Cooldown هشدار فوری، دقیقه <input id="alertCooldownMinutes" type="number"></label>
       </div>
-
-      <div class="card">
-        <h2>شهرهای فعال</h2>
-        <div id="cities"></div>
-        <button onclick="saveSettings()">ذخیره شهرها</button>
+      <div class="checks">
+        <label><input id="dailyReport" type="checkbox"> گزارش روزانه فعال باشد</label>
+        <label><input id="realTimeAlerts" type="checkbox"> هشدار فوری فعال باشد</label>
       </div>
+      <button onclick="saveSettings()">ذخیره تنظیمات</button>
+    </section>
 
-      <div class="card">
-        <h2>عملیات سریع</h2>
-        <button onclick="sendNow()">ارسال گزارش همین حالا</button>
-        <button onclick="testAlerts()">تست هشدار فوری</button>
-        <a class="button" href="/api/report-preview?city=madrid" target="_blank">پیش‌نمایش مادرید</a>
+    <section id="tab-cities" class="tab card hidden">
+      <h2>🏙 مدیریت شهرها</h2>
+      <p class="hint">برای افزودن شهر جدید، مختصات latitude و longitude لازم است.</p>
+      <div class="form-grid">
+        <label>Key انگلیسی، مثال valencia <input id="cityKey" placeholder="valencia"></label>
+        <label>نام انگلیسی <input id="cityName" placeholder="Valencia, Spain"></label>
+        <label>نام فارسی <input id="cityFa" placeholder="والنسیا، اسپانیا"></label>
+        <label>Latitude <input id="cityLat" type="number" step="any" placeholder="39.4699"></label>
+        <label>Longitude <input id="cityLon" type="number" step="any" placeholder="-0.3763"></label>
+      </div>
+      <button onclick="addCity()">افزودن / ویرایش شهر</button>
+      <h3>شهرهای فعال برای گزارش روزانه</h3>
+      <div id="cities"></div>
+      <button onclick="saveSettings()">ذخیره شهرهای فعال</button>
+      <div id="cityList" class="table-wrap"></div>
+    </section>
+
+    <section id="tab-alerts" class="tab card hidden">
+      <h2>🚨 تنظیم هشدارها</h2>
+      <p>هشدار فوری هر ۳۰ دقیقه بررسی می‌شود و اگر از حدهای تعیین‌شده عبور کند پیام می‌فرستد.</p>
+      <ul class="nice-list">
+        <li>بارندگی بالاتر از حد Rain Threshold</li>
+        <li>باد شدید بالاتر از Wind Warning</li>
+        <li>UV بالا</li>
+        <li>گرمای شدید یا سرمای شدید</li>
+        <li>کیفیت هوای ناسالم، AQI بالای 101</li>
+      </ul>
+      <button onclick="testAlerts()">اجرای تست هشدار فوری</button>
+    </section>
+
+    <section id="tab-users" class="tab card hidden">
+      <h2>👥 کاربران تلگرام</h2>
+      <button onclick="loadUsers()">بروزرسانی کاربران</button>
+      <div id="usersBox" class="table-wrap"></div>
+    </section>
+
+    <section id="tab-logs" class="tab card hidden">
+      <h2>📜 لاگ‌ها</h2>
+      <div class="row">
+        <button onclick="loadLogs()">بروزرسانی لاگ‌ها</button>
+        <button class="danger" onclick="clearLogs()">پاک کردن لاگ‌ها</button>
+      </div>
+      <div id="logsBox" class="table-wrap"></div>
+    </section>
+
+    <section id="tab-quick" class="tab card hidden">
+      <h2>⚡ عملیات سریع</h2>
+      <div class="grid-actions">
+        <button onclick="sendNow()">ارسال گزارش همه شهرها همین حالا</button>
+        <button onclick="sendCityNow()">ارسال گزارش شهر انتخابی</button>
+        <select id="quickCity"></select>
+        <a class="button" href="/api/set-webhook" target="_blank">فعال‌سازی Webhook</a>
+        <a class="button" href="/api/report-preview?city=madrid" target="_blank">پیش‌نمایش گزارش مادرید</a>
         <a class="button" href="/api/chart?city=tehran" target="_blank">نمودار تهران</a>
-        <a class="button" href="/api/set-webhook" target="_blank">Set Webhook</a>
       </div>
     </section>
 
     <section class="card">
-      <h2>خروجی</h2>
-      <pre id="output">منتظر عملیات...</pre>
+      <h2>خروجی سیستم</h2>
+      <pre id="output">برای شروع ADMIN_PASSWORD را وارد کن و روی بارگذاری پنل بزن.</pre>
     </section>
   </div>
   <script src="/admin.js"></script>

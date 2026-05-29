@@ -23,6 +23,9 @@ const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123";
 
 const SETTINGS_PATH = path.join(__dirname, "settings.json");
+const CITIES_PATH = path.join(__dirname, "cities.json");
+const USERS_PATH = path.join(__dirname, "users.json");
+const LOGS_PATH = path.join(__dirname, "logs.json");
 
 const defaultSettings = {
   sendTime: "08:00",
@@ -38,12 +41,61 @@ const defaultSettings = {
   alertCooldownMinutes: 120
 };
 
-const cities = {
+const defaultCities = {
   salamanca: { key: "salamanca", name: "Salamanca, Spain", fa: "سالامانکا، اسپانیا", lat: 40.9701, lon: -5.6635 },
   madrid: { key: "madrid", name: "Madrid, Spain", fa: "مادرید، اسپانیا", lat: 40.4168, lon: -3.7038 },
   tehran: { key: "tehran", name: "Tehran, Iran", fa: "تهران، ایران", lat: 35.6892, lon: 51.3890 },
   ardabil: { key: "ardabil", name: "Ardabil, Iran", fa: "اردبیل، ایران", lat: 38.2498, lon: 48.2933 }
 };
+
+function loadJson(filePath, fallback) {
+  try {
+    if (!fs.existsSync(filePath)) {
+      fs.writeFileSync(filePath, JSON.stringify(fallback, null, 2));
+      return JSON.parse(JSON.stringify(fallback));
+    }
+    const parsed = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    if (Array.isArray(fallback)) return Array.isArray(parsed) ? parsed : JSON.parse(JSON.stringify(fallback));
+    return { ...fallback, ...parsed };
+  } catch (err) {
+    console.error("JSON load error:", filePath, err.message);
+    return JSON.parse(JSON.stringify(fallback));
+  }
+}
+
+function saveJson(filePath, data) {
+  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+}
+
+let cities = loadJson(CITIES_PATH, defaultCities);
+let users = loadJson(USERS_PATH, {});
+let logs = loadJson(LOGS_PATH, []);
+
+function saveCities() { saveJson(CITIES_PATH, cities); }
+function saveUsers() { saveJson(USERS_PATH, users); }
+function saveLogs() { saveJson(LOGS_PATH, logs.slice(-500)); }
+
+function logEvent(type, message, meta = {}) {
+  const item = { time: new Date().toISOString(), type, message, meta };
+  logs.push(item);
+  logs = logs.slice(-500);
+  saveLogs();
+  console.log(`[${type}] ${message}`, Object.keys(meta).length ? meta : "");
+}
+
+function recordUser(rawUser, chatId) {
+  if (!rawUser || !chatId) return;
+  const id = String(chatId);
+  users[id] = {
+    chatId: id,
+    firstName: rawUser.first_name || users[id]?.firstName || "",
+    lastName: rawUser.last_name || users[id]?.lastName || "",
+    username: rawUser.username || users[id]?.username || "",
+    languageCode: rawUser.language_code || users[id]?.languageCode || "",
+    lastSeen: new Date().toISOString()
+  };
+  saveUsers();
+}
 
 let scheduledDailyTask = null;
 let scheduledAlertTask = null;
@@ -280,6 +332,9 @@ async function sendMainMenu(chatId) {
         [
           { text: "⚠️ Alert Status", callback_data: "alerts:status" },
           { text: "⚙️ Settings", callback_data: "settings:show" }
+        ],
+        [
+          { text: "🛠 پنل مدیریت وب", url: PUBLIC_URL || "https://render.com" }
         ]
       ]
     }
@@ -289,6 +344,7 @@ async function sendMainMenu(chatId) {
 async function sendWeatherToTelegram(chatId, cityKey) {
   const { city, weather, air } = await fetchWeather(cityKey);
   const report = formatReport(city, weather, air);
+  logEvent("weather", `Weather report requested for ${city.key}`, { chatId, cityKey: city.key });
   return sendMessage(chatId, report);
 }
 
@@ -329,6 +385,7 @@ async function createChartBuffer(cityKey) {
 async function sendChartToTelegram(chatId, cityKey) {
   const key = normalizeCityKey(cityKey);
   if (!cities[key]) throw new Error("City not found");
+  logEvent("chart", `Chart requested for ${key}`, { chatId, cityKey: key });
   const buffer = await createChartBuffer(key);
   const form = new FormData();
   form.append("chat_id", String(chatId));
@@ -472,6 +529,7 @@ app.post("/webhook", async (req, res) => {
     if (update.callback_query) {
       const callback = update.callback_query;
       const chatId = callback.message.chat.id;
+      recordUser(callback.from, chatId);
       const data = callback.data || "";
       console.log("Callback data:", data);
       answerCallback(callback.id);
@@ -504,7 +562,9 @@ app.post("/webhook", async (req, res) => {
     if (!msg || !msg.text) return;
 
     const chatId = msg.chat.id;
+    recordUser(msg.from, chatId);
     const text = msg.text.trim();
+    logEvent("message", `Telegram command: ${text}`, { chatId });
     const lower = text.toLowerCase();
 
     if (lower === "/start" || lower === "/menu") return sendMainMenu(chatId);
@@ -534,7 +594,67 @@ app.post("/webhook", async (req, res) => {
       }
       settings.sendTime = newTime;
       saveSettings(settings);
-      scheduleJobs();
+      
+app.get("/api/admin/cities", adminAuth, (req, res) => {
+  res.json({ ok: true, cities });
+});
+
+app.post("/api/admin/cities", adminAuth, (req, res) => {
+  try {
+    const body = req.body || {};
+    const key = normalizeCityKey(body.key || body.name);
+    const lat = Number(body.lat);
+    const lon = Number(body.lon);
+    if (!key || !body.name || Number.isNaN(lat) || Number.isNaN(lon)) {
+      return res.status(400).json({ ok: false, error: "key, name, lat and lon are required" });
+    }
+    cities[key] = { key, name: body.name, fa: body.fa || body.name, lat, lon };
+    if (!settings.selectedCities.includes(key)) settings.selectedCities.push(key);
+    saveCities();
+    saveSettings(settings);
+    logEvent("admin", `City saved: ${key}`, cities[key]);
+    res.json({ ok: true, city: cities[key], cities, settings });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.delete("/api/admin/cities/:key", adminAuth, (req, res) => {
+  const key = normalizeCityKey(req.params.key);
+  if (!cities[key]) return res.status(404).json({ ok: false, error: "City not found" });
+  delete cities[key];
+  settings.selectedCities = settings.selectedCities.filter(x => x !== key);
+  saveCities();
+  saveSettings(settings);
+  logEvent("admin", `City deleted: ${key}`);
+  res.json({ ok: true, cities, settings });
+});
+
+app.get("/api/admin/users", adminAuth, (req, res) => {
+  res.json({ ok: true, users: Object.values(users).sort((a,b)=>String(b.lastSeen).localeCompare(String(a.lastSeen))) });
+});
+
+app.get("/api/admin/logs", adminAuth, (req, res) => {
+  res.json({ ok: true, logs: logs.slice().reverse() });
+});
+
+app.delete("/api/admin/logs", adminAuth, (req, res) => {
+  logs = [];
+  saveLogs();
+  res.json({ ok: true, logs });
+});
+
+app.post("/api/admin/send-city", adminAuth, async (req, res) => {
+  try {
+    const key = normalizeCityKey(req.body.city || "madrid");
+    await sendWeatherToTelegram(DEFAULT_CHAT_ID, key);
+    res.json({ ok: true, sent: key });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+scheduleJobs();
       return sendMessage(chatId, `✅ ساعت ارسال روزانه تغییر کرد به ${newTime}`);
     }
 
@@ -567,7 +687,67 @@ app.post("/api/admin/settings", adminAuth, (req, res) => {
     settings.coldWarningC = Number(settings.coldWarningC);
     settings.alertCooldownMinutes = Number(settings.alertCooldownMinutes);
     saveSettings(settings);
-    scheduleJobs();
+    
+app.get("/api/admin/cities", adminAuth, (req, res) => {
+  res.json({ ok: true, cities });
+});
+
+app.post("/api/admin/cities", adminAuth, (req, res) => {
+  try {
+    const body = req.body || {};
+    const key = normalizeCityKey(body.key || body.name);
+    const lat = Number(body.lat);
+    const lon = Number(body.lon);
+    if (!key || !body.name || Number.isNaN(lat) || Number.isNaN(lon)) {
+      return res.status(400).json({ ok: false, error: "key, name, lat and lon are required" });
+    }
+    cities[key] = { key, name: body.name, fa: body.fa || body.name, lat, lon };
+    if (!settings.selectedCities.includes(key)) settings.selectedCities.push(key);
+    saveCities();
+    saveSettings(settings);
+    logEvent("admin", `City saved: ${key}`, cities[key]);
+    res.json({ ok: true, city: cities[key], cities, settings });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.delete("/api/admin/cities/:key", adminAuth, (req, res) => {
+  const key = normalizeCityKey(req.params.key);
+  if (!cities[key]) return res.status(404).json({ ok: false, error: "City not found" });
+  delete cities[key];
+  settings.selectedCities = settings.selectedCities.filter(x => x !== key);
+  saveCities();
+  saveSettings(settings);
+  logEvent("admin", `City deleted: ${key}`);
+  res.json({ ok: true, cities, settings });
+});
+
+app.get("/api/admin/users", adminAuth, (req, res) => {
+  res.json({ ok: true, users: Object.values(users).sort((a,b)=>String(b.lastSeen).localeCompare(String(a.lastSeen))) });
+});
+
+app.get("/api/admin/logs", adminAuth, (req, res) => {
+  res.json({ ok: true, logs: logs.slice().reverse() });
+});
+
+app.delete("/api/admin/logs", adminAuth, (req, res) => {
+  logs = [];
+  saveLogs();
+  res.json({ ok: true, logs });
+});
+
+app.post("/api/admin/send-city", adminAuth, async (req, res) => {
+  try {
+    const key = normalizeCityKey(req.body.city || "madrid");
+    await sendWeatherToTelegram(DEFAULT_CHAT_ID, key);
+    res.json({ ok: true, sent: key });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+scheduleJobs();
     res.json({ ok: true, settings });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
@@ -587,6 +767,66 @@ app.post("/api/admin/send-now", adminAuth, async (req, res) => {
   try {
     await sendAllDailyReport(DEFAULT_CHAT_ID);
     res.json({ ok: true, message: "Daily report sent" });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+
+app.get("/api/admin/cities", adminAuth, (req, res) => {
+  res.json({ ok: true, cities });
+});
+
+app.post("/api/admin/cities", adminAuth, (req, res) => {
+  try {
+    const body = req.body || {};
+    const key = normalizeCityKey(body.key || body.name);
+    const lat = Number(body.lat);
+    const lon = Number(body.lon);
+    if (!key || !body.name || Number.isNaN(lat) || Number.isNaN(lon)) {
+      return res.status(400).json({ ok: false, error: "key, name, lat and lon are required" });
+    }
+    cities[key] = { key, name: body.name, fa: body.fa || body.name, lat, lon };
+    if (!settings.selectedCities.includes(key)) settings.selectedCities.push(key);
+    saveCities();
+    saveSettings(settings);
+    logEvent("admin", `City saved: ${key}`, cities[key]);
+    res.json({ ok: true, city: cities[key], cities, settings });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.delete("/api/admin/cities/:key", adminAuth, (req, res) => {
+  const key = normalizeCityKey(req.params.key);
+  if (!cities[key]) return res.status(404).json({ ok: false, error: "City not found" });
+  delete cities[key];
+  settings.selectedCities = settings.selectedCities.filter(x => x !== key);
+  saveCities();
+  saveSettings(settings);
+  logEvent("admin", `City deleted: ${key}`);
+  res.json({ ok: true, cities, settings });
+});
+
+app.get("/api/admin/users", adminAuth, (req, res) => {
+  res.json({ ok: true, users: Object.values(users).sort((a,b)=>String(b.lastSeen).localeCompare(String(a.lastSeen))) });
+});
+
+app.get("/api/admin/logs", adminAuth, (req, res) => {
+  res.json({ ok: true, logs: logs.slice().reverse() });
+});
+
+app.delete("/api/admin/logs", adminAuth, (req, res) => {
+  logs = [];
+  saveLogs();
+  res.json({ ok: true, logs });
+});
+
+app.post("/api/admin/send-city", adminAuth, async (req, res) => {
+  try {
+    const key = normalizeCityKey(req.body.city || "madrid");
+    await sendWeatherToTelegram(DEFAULT_CHAT_ID, key);
+    res.json({ ok: true, sent: key });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
