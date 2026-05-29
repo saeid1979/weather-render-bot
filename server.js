@@ -136,6 +136,40 @@ async function fetchWeather(cityKey) {
   if (weatherRes.status !== 'fulfilled') throw new Error('Weather API failed');
   return { city, weather: weatherRes.value.data, air: airRes.status === 'fulfilled' ? airRes.value.data : null };
 }
+
+async function fetchWeatherForPoint(lat, lon, label = 'Selected Location') {
+  const latitude = Number(lat);
+  const longitude = Number(lon);
+  if (Number.isNaN(latitude) || Number.isNaN(longitude)) throw new Error('Invalid coordinates');
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) throw new Error('Coordinates out of range');
+  const city = {
+    key: `point-${latitude.toFixed(4)}-${longitude.toFixed(4)}`,
+    name: label,
+    fa: label,
+    lat: latitude,
+    lon: longitude
+  };
+  const [weatherRes, airRes] = await Promise.allSettled([
+    axios.get(buildWeatherUrl(city), { timeout: 15000 }),
+    axios.get(buildAirUrl(city), { timeout: 15000 })
+  ]);
+  if (weatherRes.status !== 'fulfilled') throw new Error('Weather API failed');
+  return { city, weather: weatherRes.value.data, air: airRes.status === 'fulfilled' ? airRes.value.data : null };
+}
+
+async function reverseGeocode(lat, lon) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&zoom=10&accept-language=fa,en`;
+    const result = await axios.get(url, {
+      timeout: 10000,
+      headers: { 'User-Agent': 'weather-render-bot/1.0 (Telegram weather assistant)' }
+    });
+    const a = result.data.address || {};
+    return a.city || a.town || a.village || a.county || a.state || result.data.display_name || 'Selected Location';
+  } catch (err) {
+    return 'Selected Location';
+  }
+}
 function avg(arr) { return arr.length ? Math.round(arr.reduce((a,b)=>a+b,0) / arr.length) : null; }
 function max(arr) { return arr.length ? Math.max(...arr) : null; }
 function min(arr) { return arr.length ? Math.min(...arr) : null; }
@@ -330,6 +364,64 @@ app.get('/api/map-data', async (req, res) => {
   res.json({ ok: true, time: new Date().toISOString(), timezone: TIMEZONE, settings, cities: result });
 });
 
+
+
+app.get('/api/point-details', async (req, res) => {
+  try {
+    const lat = Number(req.query.lat);
+    const lon = Number(req.query.lon);
+    if (Number.isNaN(lat) || Number.isNaN(lon)) return res.status(400).json({ ok: false, error: 'lat and lon are required' });
+    const label = req.query.name || await reverseGeocode(lat, lon);
+    const { city, weather, air } = await fetchWeatherForPoint(lat, lon, label);
+    const { summary, alerts } = analyzeWeather(city, weather, air);
+    res.json({
+      ok: true,
+      time: new Date().toISOString(),
+      timezone: TIMEZONE,
+      city: { key: city.key, name: city.name, fa: city.fa, lat: city.lat, lon: city.lon, dynamic: true },
+      summary,
+      alerts,
+      status: getStatus(summary, alerts),
+      aiSummary: aiLikeSummary(city, summary, alerts),
+      reportUrl: `/api/point-report?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&name=${encodeURIComponent(label)}`,
+      chartUrl: `/api/point-chart?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&name=${encodeURIComponent(label)}`
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.get('/api/point-report', async (req, res) => {
+  try {
+    const label = req.query.name || await reverseGeocode(req.query.lat, req.query.lon);
+    const { city, weather, air } = await fetchWeatherForPoint(req.query.lat, req.query.lon, label);
+    res.type('text/plain').send(formatReport(city, weather, air));
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+app.get('/api/point-chart', async (req, res) => {
+  try {
+    const label = req.query.name || await reverseGeocode(req.query.lat, req.query.lon);
+    const { city, weather } = await fetchWeatherForPoint(req.query.lat, req.query.lon, label);
+    const h = weather.hourly;
+    const indexes = todayRangeIndexes(h.time);
+    const labels = indexes.map(i => hourLabel(h.time[i]));
+    const temp = indexes.map(i => h.temperature_2m[i]);
+    const rain = indexes.map(i => h.precipitation_probability[i]);
+    const wind = indexes.map(i => h.wind_speed_10m[i]);
+    const chartJSNodeCanvas = new ChartJSNodeCanvas({ width: 1000, height: 600, backgroundColour: 'white' });
+    const buffer = await chartJSNodeCanvas.renderToBuffer({
+      type: 'line',
+      data: { labels, datasets: [
+        { label: 'Temperature °C', data: temp, borderWidth: 3, tension: 0.25 },
+        { label: 'Rain Probability %', data: rain, borderWidth: 3, tension: 0.25 },
+        { label: 'Wind km/h', data: wind, borderWidth: 3, tension: 0.25 }
+      ]},
+      options: { responsive: false, plugins: { title: { display: true, text: `Weather Chart - ${city.name} - 08:00 to 24:00` }, legend: { display: true } }, scales: { y: { beginAtZero: true } } }
+    });
+    res.set('Content-Type', 'image/png').send(buffer);
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
 
 app.get('/api/city-details', async (req, res) => {
   try {

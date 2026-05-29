@@ -5,6 +5,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 let markers = [];
+let clickedMarker = null;
 let lastCityKey = null;
 
 function colorByStatus(status) {
@@ -73,10 +74,30 @@ function renderCityPanel(data) {
     <div class="actions">
       <a href="${data.reportUrl}" target="_blank">گزارش متنی</a>
       <a href="${data.chartUrl}" target="_blank">نمودار</a>
-      <button onclick="sendCityToTelegram('${c.key}')">ارسال به تلگرام</button>
-      <button onclick="loadCityDetails('${c.key}')">بروزرسانی شهر</button>
+      ${c.dynamic ? '' : `<button onclick="sendCityToTelegram('${c.key}')">ارسال به تلگرام</button>`}
+      ${c.dynamic ? `<a href="${data.reportUrl}" target="_blank">گزارش این نقطه</a>` : `<button onclick="loadCityDetails('${c.key}')">بروزرسانی شهر</button>`}
     </div>
   `;
+}
+
+
+async function loadPointDetails(lat, lon) {
+  lastCityKey = null;
+  const panel = document.getElementById('cityDetails');
+  panel.innerHTML = '⏳ در حال دریافت اطلاعات نقطه انتخاب‌شده...';
+  try {
+    const res = await fetch(`/api/point-details?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`);
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'خطا در دریافت اطلاعات');
+    if (clickedMarker) map.removeLayer(clickedMarker);
+    clickedMarker = L.marker([lat, lon], { icon: markerIcon(data.status) })
+      .bindPopup(`<b>📍 ${data.city.fa || data.city.name}</b><br>🌡 ${value(data.summary.tempMin, '°C')} تا ${value(data.summary.tempMax, '°C')}<br>🌧 ${value(data.summary.rainMax, '%')}<br><button onclick="loadPointDetails(${lat}, ${lon})">بروزرسانی</button>`)
+      .addTo(map)
+      .openPopup();
+    renderCityPanel(data);
+  } catch (err) {
+    panel.innerHTML = `<div class="alert">❌ ${err.message}</div>`;
+  }
 }
 
 async function loadCityDetails(cityKey) {
@@ -141,6 +162,11 @@ async function loadMap() {
   if (bounds.length) map.fitBounds(bounds, { padding: [40, 40] });
   if (lastCityKey) loadCityDetails(lastCityKey);
 }
+
+
+map.on('click', (e) => {
+  loadPointDetails(e.latlng.lat, e.latlng.lng);
+});
 
 loadMap();
 setInterval(loadMap, 10 * 60 * 1000);
