@@ -330,6 +330,31 @@ app.get('/api/map-data', async (req, res) => {
   res.json({ ok: true, time: new Date().toISOString(), timezone: TIMEZONE, settings, cities: result });
 });
 
+
+app.get('/api/city-details', async (req, res) => {
+  try {
+    const key = normalizeCityKey(req.query.city || 'madrid');
+    if (!key || !cities[key]) return res.status(404).json({ ok: false, error: 'City not found' });
+    const { city, weather, air } = await fetchWeather(key);
+    const { summary, alerts } = analyzeWeather(city, weather, air);
+    res.json({
+      ok: true,
+      time: new Date().toISOString(),
+      timezone: TIMEZONE,
+      city: { key, name: city.name, fa: city.fa, lat: city.lat, lon: city.lon },
+      summary,
+      alerts,
+      status: getStatus(summary, alerts),
+      aiSummary: aiLikeSummary(city, summary, alerts),
+      reportUrl: `/api/report-preview?city=${encodeURIComponent(key)}`,
+      chartUrl: `/api/chart?city=${encodeURIComponent(key)}`,
+      telegramSendUrl: `/api/send-telegram?city=${encodeURIComponent(key)}`
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
   const update = req.body;
