@@ -25,10 +25,12 @@ const SETTINGS_PATH = path.join(__dirname, 'settings.json');
 const CITIES_PATH = path.join(__dirname, 'cities.json');
 const USERS_PATH = path.join(__dirname, 'users.json');
 const LOGS_PATH = path.join(__dirname, 'logs.json');
+const SENT_PATH = path.join(__dirname, 'sent-daily.json');
 
 const defaultSettings = {
   sendTime: '08:00',
   language: 'fa',
+  supportedLanguages: ['fa', 'es', 'ar'],
   rainThreshold: Number(process.env.RAIN_THRESHOLD || 50),
   windWarningKmh: Number(process.env.WIND_WARNING_KMH || 55),
   uvWarning: Number(process.env.UV_WARNING || 7),
@@ -41,10 +43,10 @@ const defaultSettings = {
 };
 
 const defaultCities = {
-  salamanca: { key: 'salamanca', name: 'Salamanca, Spain', fa: 'سالامانکا، اسپانیا', lat: 40.9701, lon: -5.6635 },
-  madrid: { key: 'madrid', name: 'Madrid, Spain', fa: 'مادرید، اسپانیا', lat: 40.4168, lon: -3.7038 },
-  tehran: { key: 'tehran', name: 'Tehran, Iran', fa: 'تهران، ایران', lat: 35.6892, lon: 51.3890 },
-  ardabil: { key: 'ardabil', name: 'Ardabil, Iran', fa: 'اردبیل، ایران', lat: 38.2498, lon: 48.2933 }
+  salamanca: { key: 'salamanca', name: 'Salamanca, Spain', fa: 'سالامانکا، اسپانیا', es: 'Salamanca, España', ar: 'سالامانكا، إسبانيا', lat: 40.9701, lon: -5.6635 },
+  madrid: { key: 'madrid', name: 'Madrid, Spain', fa: 'مادرید، اسپانیا', es: 'Madrid, España', ar: 'مدريد، إسبانيا', lat: 40.4168, lon: -3.7038 },
+  tehran: { key: 'tehran', name: 'Tehran, Iran', fa: 'تهران، ایران', es: 'Teherán, Irán', ar: 'طهران، إيران', lat: 35.6892, lon: 51.3890 },
+  ardabil: { key: 'ardabil', name: 'Ardabil, Iran', fa: 'اردبیل، ایران', es: 'Ardabil, Irán', ar: 'أردبيل، إيران', lat: 38.2498, lon: 48.2933 }
 };
 
 function clone(x) { return JSON.parse(JSON.stringify(x)); }
@@ -68,30 +70,100 @@ let settings = loadJson(SETTINGS_PATH, defaultSettings);
 let cities = loadJson(CITIES_PATH, defaultCities);
 let users = loadJson(USERS_PATH, {});
 let logs = loadJson(LOGS_PATH, []);
+let sentDaily = loadJson(SENT_PATH, {});
 
 function saveSettings() { saveJson(SETTINGS_PATH, settings); }
 function saveCities() { saveJson(CITIES_PATH, cities); }
 function saveUsers() { saveJson(USERS_PATH, users); }
 function saveLogs() { logs = logs.slice(-800); saveJson(LOGS_PATH, logs); }
+function saveSentDaily() { saveJson(SENT_PATH, sentDaily); }
 function logEvent(type, message, meta = {}) {
   const item = { time: new Date().toISOString(), type, message, meta };
   logs.push(item); saveLogs();
   console.log(`[${type}] ${message}`, Object.keys(meta).length ? meta : '');
 }
+function normalizeLanguage(input) {
+  const l = String(input || '').toLowerCase().slice(0,2);
+  if (['fa','es','ar'].includes(l)) return l;
+  return settings.language || 'fa';
+}
+function inferLanguage(rawUser) {
+  const lc = String(rawUser?.language_code || '').toLowerCase();
+  if (lc.startsWith('es')) return 'es';
+  if (lc.startsWith('ar')) return 'ar';
+  return settings.language || 'fa';
+}
 function recordUser(rawUser, chatId) {
   if (!chatId) return;
   const id = String(chatId);
+  const old = users[id] || {};
   users[id] = {
     chatId: id,
-    firstName: rawUser?.first_name || users[id]?.firstName || '',
-    lastName: rawUser?.last_name || users[id]?.lastName || '',
-    username: rawUser?.username || users[id]?.username || '',
-    languageCode: rawUser?.language_code || users[id]?.languageCode || '',
+    firstName: rawUser?.first_name || old.firstName || '',
+    lastName: rawUser?.last_name || old.lastName || '',
+    username: rawUser?.username || old.username || '',
+    languageCode: rawUser?.language_code || old.languageCode || '',
+    language: old.language || inferLanguage(rawUser),
+    city: old.city || 'madrid',
+    sendTime: old.sendTime || settings.sendTime || '08:00',
+    rainThreshold: Number(old.rainThreshold || settings.rainThreshold || 50),
+    isActive: old.isActive !== false,
+    isAdmin: old.isAdmin || (DEFAULT_CHAT_ID && String(DEFAULT_CHAT_ID) === id),
+    createdAt: old.createdAt || new Date().toISOString(),
     lastSeen: new Date().toISOString()
   };
   saveUsers();
 }
+function getUser(chatId) {
+  const id = String(chatId);
+  return users[id] || { chatId: id, language: settings.language || 'fa', city: 'madrid', sendTime: settings.sendTime || '08:00', rainThreshold: settings.rainThreshold, isActive: true };
+}
+function isAdminChat(chatId) {
+  const u = users[String(chatId)];
+  return (DEFAULT_CHAT_ID && String(DEFAULT_CHAT_ID) === String(chatId)) || !!u?.isAdmin;
+}
+function userThreshold(chatId) {
+  return Number(getUser(chatId).rainThreshold || settings.rainThreshold || 50);
+}
 
+
+
+const TR = {
+  fa: {
+    menuTitle: '🌤 منوی بات هواشناسی\nیک گزینه را انتخاب کنید:',
+    liveMap: '🗺 نقشه زنده', adminPanel: '🛠 پنل مدیریت وب', settings: '⚙️ تنظیمات', alertStatus: '⚠️ وضعیت هشدار',
+    cityNotFound: '❌ شهر پیدا نشد.', invalid: 'دستور نامعتبر است. /menu را بزنید.',
+    mapLink: '🗺 نقشه زنده آب‌وهوا:',
+    settingsText: '⚙️ تنظیمات شما', dailyTime: '⏰ ساعت ارسال', rainLimit: '🌧 حد بارندگی', city: '🏙 شهر', language: '🌐 زبان', active: '✅ فعال', inactive: '⛔ غیرفعال',
+    setTimeOk: '✅ ساعت ارسال روزانه شما تغییر کرد به', setTimeBad: '❌ فرمت درست: /settime 08:00',
+    setCityOk: '✅ شهر پیش‌فرض شما تغییر کرد به', setLangOk: '✅ زبان شما تغییر کرد به فارسی',
+    help: 'دستورها:\n/menu\n/weather madrid\n/chart tehran\n/all\n/setcity madrid\n/settime 08:00\n/lang fa | /lang es | /lang ar\n/mysettings',
+    userAdded: '✅ کاربر اضافه شد.', userRemoved: '✅ کاربر حذف/غیرفعال شد.', notAdmin: '⛔ فقط مدیر اجازه این کار را دارد.', broadcastSent: '✅ پیام همگانی ارسال شد.'
+  },
+  es: {
+    menuTitle: '🌤 Menú del bot meteorológico\nElige una opción:',
+    liveMap: '🗺 Mapa en vivo', adminPanel: '🛠 Panel de administración', settings: '⚙️ Ajustes', alertStatus: '⚠️ Estado de alertas',
+    cityNotFound: '❌ Ciudad no encontrada.', invalid: 'Comando no válido. Usa /menu.',
+    mapLink: '🗺 Mapa meteorológico en vivo:',
+    settingsText: '⚙️ Tus ajustes', dailyTime: '⏰ Hora de envío', rainLimit: '🌧 Límite de lluvia', city: '🏙 Ciudad', language: '🌐 Idioma', active: '✅ Activo', inactive: '⛔ Inactivo',
+    setTimeOk: '✅ Tu hora diaria cambió a', setTimeBad: '❌ Formato correcto: /settime 08:00',
+    setCityOk: '✅ Tu ciudad predeterminada cambió a', setLangOk: '✅ Tu idioma cambió a español',
+    help: 'Comandos:\n/menu\n/weather madrid\n/chart tehran\n/all\n/setcity madrid\n/settime 08:00\n/lang fa | /lang es | /lang ar\n/mysettings',
+    userAdded: '✅ Usuario añadido.', userRemoved: '✅ Usuario eliminado/desactivado.', notAdmin: '⛔ Solo el administrador puede hacerlo.', broadcastSent: '✅ Mensaje enviado a todos los usuarios.'
+  },
+  ar: {
+    menuTitle: '🌤 قائمة بوت الطقس\nاختر خياراً:',
+    liveMap: '🗺 الخريطة الحية', adminPanel: '🛠 لوحة الإدارة', settings: '⚙️ الإعدادات', alertStatus: '⚠️ حالة التنبيهات',
+    cityNotFound: '❌ لم يتم العثور على المدينة.', invalid: 'أمر غير صحيح. استخدم /menu.',
+    mapLink: '🗺 خريطة الطقس الحية:',
+    settingsText: '⚙️ إعداداتك', dailyTime: '⏰ وقت الإرسال', rainLimit: '🌧 حد المطر', city: '🏙 المدينة', language: '🌐 اللغة', active: '✅ نشط', inactive: '⛔ غير نشط',
+    setTimeOk: '✅ تم تغيير وقت الإرسال اليومي إلى', setTimeBad: '❌ الصيغة الصحيحة: /settime 08:00',
+    setCityOk: '✅ تم تغيير مدينتك الافتراضية إلى', setLangOk: '✅ تم تغيير اللغة إلى العربية',
+    help: 'الأوامر:\n/menu\n/weather madrid\n/chart tehran\n/all\n/setcity madrid\n/settime 08:00\n/lang fa | /lang es | /lang ar\n/mysettings',
+    userAdded: '✅ تمت إضافة المستخدم.', userRemoved: '✅ تم حذف/تعطيل المستخدم.', notAdmin: '⛔ هذا الأمر للمدير فقط.', broadcastSent: '✅ تم إرسال الرسالة الجماعية.'
+  }
+};
+function tr(lang, key) { return (TR[normalizeLanguage(lang)] || TR.fa)[key] || TR.fa[key] || key; }
 function normalizeCityKey(input) {
   if (!input) return null;
   const raw = String(input).trim().toLowerCase();
@@ -103,7 +175,7 @@ function normalizeCityKey(input) {
   };
   return aliases[raw] || raw.replace(/\s+/g, '-');
 }
-function cityLabel(city) { return city.fa || city.name || city.key; }
+function cityLabel(city, lang = 'fa') { return city?.[normalizeLanguage(lang)] || city?.fa || city?.name || city?.key; }
 function todayDateString() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
 }
@@ -187,7 +259,7 @@ async function reverseGeocode(lat, lon) {
 function avg(arr) { return arr.length ? Math.round(arr.reduce((a,b)=>a+b,0) / arr.length) : null; }
 function max(arr) { return arr.length ? Math.max(...arr) : null; }
 function min(arr) { return arr.length ? Math.min(...arr) : null; }
-function analyzeWeather(city, weather, air, mode = 'daily') {
+function analyzeWeather(city, weather, air, mode = 'daily', opts = settings) {
   const h = weather.hourly || {};
   const idxs = todayRangeIndexes(h.time || [], mode);
   const values = (name) => idxs.map(i => h[name]?.[i]).filter(v => typeof v === 'number');
@@ -198,7 +270,7 @@ function analyzeWeather(city, weather, air, mode = 'daily') {
   const uv = values('uv_index');
   const humidity = values('relative_humidity_2m');
   const rainHours = idxs.map(i => ({ time: h.time[i], value: h.precipitation_probability?.[i] }))
-    .filter(x => typeof x.value === 'number' && x.value >= Number(settings.rainThreshold));
+    .filter(x => typeof x.value === 'number' && x.value >= Number(opts.rainThreshold));
   const airValues = air?.hourly?.us_aqi ? idxs.map(i => air.hourly.us_aqi[i]).filter(v => typeof v === 'number') : [];
   const summary = {
     tempMax: max(temps), tempMin: min(temps), apparentMax: max(apparent), rainMax: max(rain), windMax: max(wind),
@@ -206,37 +278,67 @@ function analyzeWeather(city, weather, air, mode = 'daily') {
     sunrise: weather.daily?.sunrise?.[0]?.slice(11,16), sunset: weather.daily?.sunset?.[0]?.slice(11,16), rainHours
   };
   const alerts = [];
-  if (summary.rainMax !== null && summary.rainMax >= settings.rainThreshold) alerts.push(`🌧 احتمال بارندگی بالا تا ${summary.rainMax}%`);
-  if (summary.windMax !== null && summary.windMax >= settings.windWarningKmh) alerts.push(`💨 هشدار باد شدید: ${summary.windMax} km/h`);
-  if (summary.uvMax !== null && summary.uvMax >= settings.uvWarning) alerts.push(`☀️ هشدار UV بالا: ${summary.uvMax}`);
-  if (summary.tempMax !== null && summary.tempMax >= settings.heatWarningC) alerts.push(`🔥 هشدار گرما: ${summary.tempMax}°C`);
-  if (summary.tempMin !== null && summary.tempMin <= settings.coldWarningC) alerts.push(`❄️ هشدار سرما: ${summary.tempMin}°C`);
+  if (summary.rainMax !== null && summary.rainMax >= opts.rainThreshold) alerts.push(`🌧 احتمال بارندگی بالا تا ${summary.rainMax}%`);
+  if (summary.windMax !== null && summary.windMax >= opts.windWarningKmh) alerts.push(`💨 هشدار باد شدید: ${summary.windMax} km/h`);
+  if (summary.uvMax !== null && summary.uvMax >= opts.uvWarning) alerts.push(`☀️ هشدار UV بالا: ${summary.uvMax}`);
+  if (summary.tempMax !== null && summary.tempMax >= opts.heatWarningC) alerts.push(`🔥 هشدار گرما: ${summary.tempMax}°C`);
+  if (summary.tempMin !== null && summary.tempMin <= opts.coldWarningC) alerts.push(`❄️ هشدار سرما: ${summary.tempMin}°C`);
   if (summary.aqiMax !== null && summary.aqiMax >= 101) alerts.push(`😷 کیفیت هوا ناسالم: AQI ${summary.aqiMax}`);
   return { summary, alerts };
 }
-function aiLikeSummary(city, summary, alerts) {
+function aiLikeSummary(city, summary, alerts, lang = 'fa', opts = settings) {
+  const name = cityLabel(city, lang);
+  if (lang === 'es') {
+    const parts = [];
+    if (summary.rainMax >= opts.rainThreshold) parts.push(`En ${name}, la probabilidad de lluvia es importante; conviene llevar paraguas.`);
+    else parts.push(`En ${name}, no se observa una probabilidad de lluvia importante.`);
+    if (summary.tempMax !== null && summary.tempMin !== null) parts.push(`La temperatura estará aproximadamente entre ${summary.tempMin} y ${summary.tempMax} °C.`);
+    if (summary.windMax >= opts.windWarningKmh) parts.push('El viento puede ser fuerte; precaución para moto, bici y reparto.');
+    if (summary.uvMax >= opts.uvWarning) parts.push('El índice UV es alto; usa protección solar.');
+    if (summary.aqiMax >= 101) parts.push('La calidad del aire puede ser mala para personas sensibles.');
+    if (!alerts.length) parts.push('Las condiciones generales son estables.');
+    return parts.join(' ');
+  }
+  if (lang === 'ar') {
+    const parts = [];
+    if (summary.rainMax >= opts.rainThreshold) parts.push(`في ${name} توجد احتمالية ملحوظة للأمطار؛ من الأفضل حمل مظلة.`);
+    else parts.push(`في ${name} لا توجد احتمالية أمطار مهمة.`);
+    if (summary.tempMax !== null && summary.tempMin !== null) parts.push(`درجة الحرارة تقريباً بين ${summary.tempMin} و ${summary.tempMax}°C.`);
+    if (summary.windMax >= opts.windWarningKmh) parts.push('قد تكون الرياح قوية؛ يرجى الحذر عند استخدام الدراجة أو الدراجة النارية.');
+    if (summary.uvMax >= opts.uvWarning) parts.push('مؤشر الأشعة فوق البنفسجية مرتفع؛ استخدم واقي الشمس.');
+    if (summary.aqiMax >= 101) parts.push('جودة الهواء قد تكون غير مناسبة للأشخاص الحساسين.');
+    if (!alerts.length) parts.push('الأحوال العامة مستقرة.');
+    return parts.join(' ');
+  }
   const parts = [];
-  const name = cityLabel(city);
-  if (summary.rainMax >= settings.rainThreshold) parts.push(`در ${name} امروز احتمال بارندگی قابل توجه است و بهتر است چتر همراه داشته باشید.`);
+  if (summary.rainMax >= opts.rainThreshold) parts.push(`در ${name} امروز احتمال بارندگی قابل توجه است و بهتر است چتر همراه داشته باشید.`);
   else parts.push(`در ${name} امروز احتمال بارندگی مهمی دیده نمی‌شود.`);
   if (summary.tempMax !== null && summary.tempMin !== null) parts.push(`بازه دما حدود ${summary.tempMin} تا ${summary.tempMax} درجه است.`);
-  if (summary.windMax >= settings.windWarningKmh) parts.push(`باد می‌تواند شدید شود؛ برای موتور، دوچرخه و دلیوری احتیاط لازم است.`);
-  if (summary.uvMax >= settings.uvWarning) parts.push(`شاخص UV بالاست؛ بهتر است در ساعات آفتابی از ضدآفتاب و کلاه استفاده شود.`);
+  if (summary.windMax >= opts.windWarningKmh) parts.push(`باد می‌تواند شدید شود؛ برای موتور، دوچرخه و دلیوری احتیاط لازم است.`);
+  if (summary.uvMax >= opts.uvWarning) parts.push(`شاخص UV بالاست؛ بهتر است در ساعات آفتابی از ضدآفتاب و کلاه استفاده شود.`);
   if (summary.aqiMax >= 101) parts.push(`کیفیت هوا برای افراد حساس مناسب نیست.`);
   if (!alerts.length) parts.push('شرایط کلی روز پایدار است.');
   return parts.join(' ');
 }
-function getStatus(summary, alerts) {
+
+function getStatus(summary, alerts, opts = settings) {
   if (alerts.some(a => a.includes('ناسالم') || a.includes('باد شدید') || a.includes('گرما'))) return 'danger';
-  if (summary.rainMax >= settings.rainThreshold || alerts.length) return 'warning';
+  if (summary.rainMax >= opts.rainThreshold || alerts.length) return 'warning';
   return 'normal';
 }
-function formatReport(city, weather, air, mode = 'daily') {
-  const { summary, alerts } = analyzeWeather(city, weather, air, mode);
-  const rainHoursText = summary.rainHours.length ? summary.rainHours.map(x => `   ⏰ ${hourLabel(x.time)} → ${x.value}%`).join('\n') : '   موردی بالای حد هشدار نیست.';
-  const alertText = alerts.length ? alerts.map(a => `⚠️ ${a}`).join('\n') : '✅ هشدار مهمی ثبت نشده است.';
-  return `🌤 گزارش هوشمند آب‌وهوا\n📍 ${cityLabel(city)}\n🕗 بازه بررسی: ${rangeLabel(mode)}\n🌍 منطقه زمانی: ${TIMEZONE}\n\n🌡 دما: ${summary.tempMin ?? '-'} تا ${summary.tempMax ?? '-'}°C\n🥵 دمای محسوس حداکثر: ${summary.apparentMax ?? '-'}°C\n🌧 بیشترین احتمال بارندگی: ${summary.rainMax ?? '-'}%\n💨 بیشترین سرعت باد: ${summary.windMax ?? '-'} km/h\n💧 میانگین رطوبت: ${summary.humidityAvg ?? '-'}%\n☀️ UV Max: ${summary.uvMax ?? '-'}\n😷 AQI Max: ${summary.aqiMax ?? '-'}\n🌅 طلوع: ${summary.sunrise ?? '-'}\n🌇 غروب: ${summary.sunset ?? '-'}\n\n🌧 ساعت‌های بارندگی بالای ${settings.rainThreshold}%:\n${rainHoursText}\n\n${alertText}\n\n🤖 خلاصه هوشمند:\n${aiLikeSummary(city, summary, alerts)}`;
+function userOptions(chatIdOrUser) {
+  const u = typeof chatIdOrUser === 'object' ? chatIdOrUser : getUser(chatIdOrUser);
+  return { ...settings, rainThreshold: Number(u.rainThreshold || settings.rainThreshold) };
 }
+function formatReport(city, weather, air, mode = 'daily', lang = 'fa', opts = settings) {
+  const { summary, alerts } = analyzeWeather(city, weather, air, mode, opts);
+  const rainHoursText = summary.rainHours.length ? summary.rainHours.map(x => `   ⏰ ${hourLabel(x.time)} → ${x.value}%`).join('\n') : (lang === 'es' ? '   No hay horas por encima del límite.' : lang === 'ar' ? '   لا توجد ساعات أعلى من الحد.' : '   موردی بالای حد هشدار نیست.');
+  const alertText = alerts.length ? alerts.map(a => `⚠️ ${a}`).join('\n') : (lang === 'es' ? '✅ No hay alertas importantes.' : lang === 'ar' ? '✅ لا توجد تنبيهات مهمة.' : '✅ هشدار مهمی ثبت نشده است.');
+  if (lang === 'es') return `🌤 Informe inteligente del tiempo\n📍 ${cityLabel(city, lang)}\n🕗 Intervalo: ${rangeLabel(mode)}\n🌍 Zona horaria: ${TIMEZONE}\n\n🌡 Temperatura: ${summary.tempMin ?? '-'} a ${summary.tempMax ?? '-'}°C\n🥵 Sensación máxima: ${summary.apparentMax ?? '-'}°C\n🌧 Probabilidad máxima de lluvia: ${summary.rainMax ?? '-'}%\n💨 Viento máximo: ${summary.windMax ?? '-'} km/h\n💧 Humedad media: ${summary.humidityAvg ?? '-'}%\n☀️ UV máx.: ${summary.uvMax ?? '-'}\n😷 AQI máx.: ${summary.aqiMax ?? '-'}\n🌅 Amanecer: ${summary.sunrise ?? '-'}\n🌇 Atardecer: ${summary.sunset ?? '-'}\n\n🌧 Horas con lluvia por encima de ${opts.rainThreshold}%:\n${rainHoursText}\n\n${alertText}\n\n🤖 Resumen inteligente:\n${aiLikeSummary(city, summary, alerts, lang, opts)}`;
+  if (lang === 'ar') return `🌤 تقرير الطقس الذكي\n📍 ${cityLabel(city, lang)}\n🕗 الفترة: ${rangeLabel(mode)}\n🌍 المنطقة الزمنية: ${TIMEZONE}\n\n🌡 الحرارة: ${summary.tempMin ?? '-'} إلى ${summary.tempMax ?? '-'}°C\n🥵 أعلى إحساس حراري: ${summary.apparentMax ?? '-'}°C\n🌧 أعلى احتمال للأمطار: ${summary.rainMax ?? '-'}%\n💨 أعلى سرعة رياح: ${summary.windMax ?? '-'} km/h\n💧 متوسط الرطوبة: ${summary.humidityAvg ?? '-'}%\n☀️ أعلى UV: ${summary.uvMax ?? '-'}\n😷 أعلى AQI: ${summary.aqiMax ?? '-'}\n🌅 الشروق: ${summary.sunrise ?? '-'}\n🌇 الغروب: ${summary.sunset ?? '-'}\n\n🌧 ساعات المطر فوق ${opts.rainThreshold}%:\n${rainHoursText}\n\n${alertText}\n\n🤖 ملخص ذكي:\n${aiLikeSummary(city, summary, alerts, lang, opts)}`;
+  return `🌤 گزارش هوشمند آب‌وهوا\n📍 ${cityLabel(city, lang)}\n🕗 بازه بررسی: ${rangeLabel(mode)}\n🌍 منطقه زمانی: ${TIMEZONE}\n\n🌡 دما: ${summary.tempMin ?? '-'} تا ${summary.tempMax ?? '-'}°C\n🥵 دمای محسوس حداکثر: ${summary.apparentMax ?? '-'}°C\n🌧 بیشترین احتمال بارندگی: ${summary.rainMax ?? '-'}%\n💨 بیشترین سرعت باد: ${summary.windMax ?? '-'} km/h\n💧 میانگین رطوبت: ${summary.humidityAvg ?? '-'}%\n☀️ UV Max: ${summary.uvMax ?? '-'}\n😷 AQI Max: ${summary.aqiMax ?? '-'}\n🌅 طلوع: ${summary.sunrise ?? '-'}\n🌇 غروب: ${summary.sunset ?? '-'}\n\n🌧 ساعت‌های بارندگی بالای ${opts.rainThreshold}%:\n${rainHoursText}\n\n${alertText}\n\n🤖 خلاصه هوشمند:\n${aiLikeSummary(city, summary, alerts, lang, opts)}`;
+}
+
 
 async function sendMessage(chatId, text, extra = {}) {
   if (!BOT_TOKEN) throw new Error('TELEGRAM_BOT_TOKEN is missing');
@@ -247,23 +349,30 @@ async function answerCallback(callbackId) {
   try { await axios.post(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, { callback_query_id: callbackId }, { timeout: 5000 }); } catch (_) {}
 }
 async function sendMainMenu(chatId) {
+  const user = getUser(chatId);
+  const lang = normalizeLanguage(user.language);
   const mapUrl = PUBLIC_URL ? `${PUBLIC_URL.replace(/\/$/, '')}/map` : 'https://render.com';
-  return sendMessage(chatId, '🌤 منوی بات هواشناسی\nیک گزینه را انتخاب کنید:', {
+  return sendMessage(chatId, tr(lang, 'menuTitle'), {
     reply_markup: { inline_keyboard: [
       [{ text: '🌤 Salamanca', callback_data: 'weather:salamanca' }, { text: '🌤 Madrid', callback_data: 'weather:madrid' }],
       [{ text: '🌤 Tehran', callback_data: 'weather:tehran' }, { text: '🌤 Ardabil', callback_data: 'weather:ardabil' }],
       [{ text: '📊 Chart Salamanca', callback_data: 'chart:salamanca' }, { text: '📊 Chart Madrid', callback_data: 'chart:madrid' }],
       [{ text: '📊 Chart Tehran', callback_data: 'chart:tehran' }, { text: '📊 Chart Ardabil', callback_data: 'chart:ardabil' }],
-      [{ text: '🗺 نقشه زنده', url: mapUrl }],
-      [{ text: '⚠️ Alert Status', callback_data: 'alerts:status' }, { text: '⚙️ Settings', callback_data: 'settings:show' }],
-      [{ text: '🛠 پنل مدیریت وب', url: PUBLIC_URL || 'https://render.com' }]
+      [{ text: tr(lang, 'liveMap'), url: mapUrl }],
+      [{ text: tr(lang, 'alertStatus'), callback_data: 'alerts:status' }, { text: tr(lang, 'settings'), callback_data: 'settings:show' }],
+      [{ text: '🇪🇸 Español', callback_data: 'lang:es' }, { text: '🇸🇦 العربية', callback_data: 'lang:ar' }, { text: '🇮🇷 فارسی', callback_data: 'lang:fa' }],
+      [{ text: tr(lang, 'adminPanel'), url: PUBLIC_URL || 'https://render.com' }]
     ] }
   });
 }
+
 async function sendWeatherToTelegram(chatId, cityKey, mode = 'manual') {
+  const user = getUser(chatId);
+  const lang = normalizeLanguage(user.language);
+  const opts = userOptions(user);
   const { city, weather, air } = await fetchWeather(cityKey);
-  logEvent('weather', `Weather report requested for ${city.key}`, { chatId, cityKey: city.key });
-  return sendMessage(chatId, formatReport(city, weather, air, mode));
+  logEvent('weather', `Weather report requested for ${city.key}`, { chatId, cityKey: city.key, lang });
+  return sendMessage(chatId, formatReport(city, weather, air, mode, lang, opts));
 }
 async function createChartBuffer(cityKey, mode = 'daily') {
   const { city, weather } = await fetchWeather(cityKey);
@@ -291,14 +400,31 @@ async function sendChartToTelegram(chatId, cityKey, mode = 'manual') {
   const buffer = await createChartBuffer(key, mode);
   const form = new FormData();
   form.append('chat_id', String(chatId));
-  form.append('caption', `📊 نمودار آب‌وهوا: ${cityLabel(cities[key])}`);
+  form.append('caption', `📊 ${cityLabel(cities[key], normalizeLanguage(getUser(chatId).language))}`);
   form.append('photo', new Blob([buffer], { type: 'image/png' }), `weather-${key}.png`);
   return fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, { method: 'POST', body: form });
 }
 async function sendAllDailyReport(chatId = DEFAULT_CHAT_ID, mode = 'manual') {
   if (!chatId) throw new Error('TELEGRAM_CHAT_ID is missing');
-  for (const key of settings.selectedCities) {
-    try { await sendWeatherToTelegram(chatId, key, mode); } catch (err) { await sendMessage(chatId, `❌ خطا در دریافت گزارش ${key}: ${err.message}`); }
+  const user = getUser(chatId);
+  const keys = user.city ? [normalizeCityKey(user.city)] : settings.selectedCities;
+  for (const key of keys) {
+    try { await sendWeatherToTelegram(chatId, key, mode); } catch (err) { await sendMessage(chatId, `❌ ${key}: ${err.message}`); }
+  }
+}
+async function sendDailyReportsToDueUsers() {
+  const today = todayDateString();
+  const nowTime = new Intl.DateTimeFormat('en-GB', { timeZone: TIMEZONE, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
+  const allUsers = Object.values(users).filter(u => u.isActive !== false);
+  for (const u of allUsers) {
+    const due = u.sendTime || settings.sendTime || '08:00';
+    const sentKey = `${today}:${u.chatId}`;
+    if (nowTime === due && sentDaily[sentKey] !== due) {
+      await sendAllDailyReport(u.chatId, 'daily');
+      sentDaily[sentKey] = due;
+      saveSentDaily();
+      logEvent('daily', `Daily report sent to user ${u.chatId}`, { chatId: u.chatId, due });
+    }
   }
 }
 const alertMemory = new Map();
@@ -311,18 +437,27 @@ function shouldAlert(cityKey, alertText) {
   alertMemory.set(key, now); return true;
 }
 async function checkRealTimeAlerts() {
-  if (!settings.realTimeAlerts || !DEFAULT_CHAT_ID) return;
+  if (!settings.realTimeAlerts) return;
+  const activeUsers = Object.values(users).filter(u => u.isActive !== false);
+  if (!activeUsers.length) return;
   for (const key of settings.selectedCities) {
     try {
       const { city, weather, air } = await fetchWeather(key);
-      const { summary, alerts } = analyzeWeather(city, weather, air, 'manual');
+      const { summary, alerts } = analyzeWeather(city, weather, air, 'manual', settings);
       const filtered = alerts.filter(a => shouldAlert(key, a));
       if (!filtered.length) continue;
-      await sendMessage(DEFAULT_CHAT_ID, `🚨 هشدار فوری آب‌وهوا\n📍 ${cityLabel(city)}\n\n${filtered.map(a => `⚠️ ${a}`).join('\n')}\n\n🤖 تحلیل سریع:\n${aiLikeSummary(city, summary, filtered)}`);
-      logEvent('alert', `Real-time alert sent for ${key}`, { alerts: filtered });
+      for (const u of activeUsers) {
+        const lang = normalizeLanguage(u.language);
+        const opts = userOptions(u);
+        const title = lang === 'es' ? 'Alerta meteorológica inmediata' : lang === 'ar' ? 'تنبيه طقس فوري' : 'هشدار فوری آب‌وهوا';
+        const quick = lang === 'es' ? 'Análisis rápido' : lang === 'ar' ? 'تحليل سريع' : 'تحلیل سریع';
+        await sendMessage(u.chatId, `🚨 ${title}\n📍 ${cityLabel(city, lang)}\n\n${filtered.map(a => `⚠️ ${a}`).join('\n')}\n\n🤖 ${quick}:\n${aiLikeSummary(city, summary, filtered, lang, opts)}`);
+      }
+      logEvent('alert', `Real-time alert sent for ${key}`, { alerts: filtered, users: activeUsers.length });
     } catch (err) { console.log('Real-time alert error:', key, err.message); }
   }
 }
+
 let scheduledDailyTask = null;
 let scheduledAlertTask = null;
 function scheduleJobs() {
@@ -330,9 +465,8 @@ function scheduleJobs() {
   if (scheduledAlertTask) scheduledAlertTask.stop();
   if (process.env.ENABLE_INTERNAL_CRON === 'false') return;
   if (settings.dailyReport) {
-    const [hh, mm] = String(settings.sendTime || '08:00').split(':').map(Number);
-    scheduledDailyTask = cron.schedule(`${mm} ${hh} * * *`, () => sendAllDailyReport(DEFAULT_CHAT_ID, 'daily').catch(err => console.error('Daily job error:', err.message)), { timezone: TIMEZONE });
-    console.log(`Daily report scheduled at ${settings.sendTime} (${TIMEZONE})`);
+    scheduledDailyTask = cron.schedule('* * * * *', () => sendDailyReportsToDueUsers().catch(err => console.error('Daily users job error:', err.message)), { timezone: TIMEZONE });
+    console.log(`Multi-user daily reports checker scheduled every minute (${TIMEZONE})`);
   }
   if (settings.realTimeAlerts) {
     scheduledAlertTask = cron.schedule('*/30 * * * *', () => checkRealTimeAlerts().catch(err => console.error('Alert job error:', err.message)), { timezone: TIMEZONE });
@@ -461,6 +595,14 @@ app.get('/api/city-details', async (req, res) => {
   }
 });
 
+
+function userSettingsText(chatId) {
+  const u = getUser(chatId);
+  const lang = normalizeLanguage(u.language);
+  const city = cities[normalizeCityKey(u.city || 'madrid')];
+  return `${tr(lang,'settingsText')}\n${tr(lang,'dailyTime')}: ${u.sendTime || settings.sendTime}\n${tr(lang,'city')}: ${city ? cityLabel(city, lang) : u.city}\n${tr(lang,'rainLimit')}: ${u.rainThreshold || settings.rainThreshold}%\n${tr(lang,'language')}: ${lang}\n${u.isActive !== false ? tr(lang,'active') : tr(lang,'inactive')}`;
+}
+function parseCommandArg(text, index = 1) { return String(text || '').trim().split(/\s+/)[index]; }
 app.post('/webhook', async (req, res) => {
   res.sendStatus(200);
   const update = req.body;
@@ -473,37 +615,106 @@ app.post('/webhook', async (req, res) => {
       answerCallback(callback.id);
       const parts = data.includes(':') ? data.split(':') : data.split('_');
       const action = parts[0];
+      const user = getUser(chatId);
+      const lang = normalizeLanguage(user.language);
       const cityKey = normalizeCityKey(parts[1]);
-      if (action === 'weather') return cities[cityKey] ? sendWeatherToTelegram(chatId, cityKey, 'manual') : sendMessage(chatId, '❌ شهر پیدا نشد.');
-      if (action === 'chart') return cities[cityKey] ? sendChartToTelegram(chatId, cityKey, 'manual') : sendMessage(chatId, '❌ شهر پیدا نشد.');
-      if (action === 'alerts') return sendMessage(chatId, `⚠️ Real-Time Alerts: ${settings.realTimeAlerts ? 'فعال' : 'غیرفعال'}\n⏰ گزارش روزانه: ${settings.sendTime}\n🌧 حد بارندگی: ${settings.rainThreshold}%`);
-      if (action === 'settings') return sendMessage(chatId, `⚙️ تنظیمات فعلی\n⏰ ساعت ارسال: ${settings.sendTime}\n🌧 حد بارندگی: ${settings.rainThreshold}%\n💨 هشدار باد: ${settings.windWarningKmh} km/h\n\nبرای تغییر ساعت:\n/settime 07:30`);
+      if (action === 'weather') return cities[cityKey] ? sendWeatherToTelegram(chatId, cityKey, 'manual') : sendMessage(chatId, tr(lang, 'cityNotFound'));
+      if (action === 'chart') return cities[cityKey] ? sendChartToTelegram(chatId, cityKey, 'manual') : sendMessage(chatId, tr(lang, 'cityNotFound'));
+      if (action === 'alerts') return sendMessage(chatId, `⚠️ Real-Time Alerts: ${settings.realTimeAlerts ? 'ON' : 'OFF'}\n${tr(lang,'dailyTime')}: ${user.sendTime || settings.sendTime}\n${tr(lang,'rainLimit')}: ${user.rainThreshold || settings.rainThreshold}%`);
+      if (action === 'settings') return sendMessage(chatId, userSettingsText(chatId));
+      if (action === 'lang') {
+        const selected = normalizeLanguage(parts[1]);
+        users[String(chatId)] = { ...users[String(chatId)], ...getUser(chatId), language: selected };
+        saveUsers();
+        return sendMessage(chatId, tr(selected, 'setLangOk'));
+      }
       return;
     }
+
     const msg = update.message;
     if (!msg || !msg.text) return;
     const chatId = msg.chat.id;
     recordUser(msg.from, chatId);
     const text = msg.text.trim();
     const lower = text.toLowerCase();
+    const user = getUser(chatId);
+    const lang = normalizeLanguage(user.language);
     logEvent('message', `Telegram command: ${text}`, { chatId });
+
     if (lower === '/start' || lower === '/menu') return sendMainMenu(chatId);
-    if (lower === '/map') return sendMessage(chatId, `🗺 نقشه زنده آب‌وهوا:\n${PUBLIC_URL ? PUBLIC_URL.replace(/\/$/, '') + '/map' : 'PUBLIC_URL تنظیم نشده است.'}`);
-    if (lower.startsWith('/weather')) { const key = normalizeCityKey(text.split(/\s+/)[1] || 'madrid'); return cities[key] ? sendWeatherToTelegram(chatId, key, 'manual') : sendMessage(chatId, '❌ شهر پیدا نشد. مثال: /weather madrid'); }
-    if (lower.startsWith('/chart')) { const key = normalizeCityKey(text.split(/\s+/)[1] || 'madrid'); return cities[key] ? sendChartToTelegram(chatId, key, 'manual') : sendMessage(chatId, '❌ شهر پیدا نشد. مثال: /chart tehran'); }
-    if (lower === '/all') return sendAllDailyReport(chatId, 'manual');
-    if (lower.startsWith('/settime')) {
-      const newTime = text.split(/\s+/)[1];
-      if (!newTime || !/^\d{2}:\d{2}$/.test(newTime)) return sendMessage(chatId, '❌ فرمت درست: /settime 08:00');
-      const [hh, mm] = newTime.split(':').map(Number);
-      if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return sendMessage(chatId, '❌ ساعت نامعتبر است.');
-      settings.sendTime = newTime; saveSettings(); scheduleJobs();
-      return sendMessage(chatId, `✅ ساعت ارسال روزانه تغییر کرد به ${newTime}`);
+    if (lower === '/help') return sendMessage(chatId, tr(lang, 'help'));
+    if (lower === '/mysettings' || lower === '/settings') return sendMessage(chatId, userSettingsText(chatId));
+    if (lower === '/map') return sendMessage(chatId, `${tr(lang, 'mapLink')}\n${PUBLIC_URL ? PUBLIC_URL.replace(/\/$/, '') + '/map' : 'PUBLIC_URL is missing'}`);
+    if (lower.startsWith('/weather')) {
+      const key = normalizeCityKey(parseCommandArg(text) || user.city || 'madrid');
+      return cities[key] ? sendWeatherToTelegram(chatId, key, 'manual') : sendMessage(chatId, tr(lang, 'cityNotFound') + ' /weather madrid');
     }
-    if (lower === '/settings') return sendMessage(chatId, `⚙️ تنظیمات\n⏰ ساعت ارسال: ${settings.sendTime}\n⚠️ هشدار فوری: ${settings.realTimeAlerts ? 'فعال' : 'غیرفعال'}\n🌧 حد بارندگی: ${settings.rainThreshold}%`);
-    return sendMessage(chatId, 'دستور نامعتبر است. /menu را بزنید.');
+    if (lower.startsWith('/chart')) {
+      const key = normalizeCityKey(parseCommandArg(text) || user.city || 'madrid');
+      return cities[key] ? sendChartToTelegram(chatId, key, 'manual') : sendMessage(chatId, tr(lang, 'cityNotFound') + ' /chart tehran');
+    }
+    if (lower === '/all') return sendAllDailyReport(chatId, 'manual');
+
+    if (lower.startsWith('/settime')) {
+      const newTime = parseCommandArg(text);
+      if (!newTime || !/^\d{2}:\d{2}$/.test(newTime)) return sendMessage(chatId, tr(lang,'setTimeBad'));
+      const [hh, mm] = newTime.split(':').map(Number);
+      if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return sendMessage(chatId, tr(lang,'setTimeBad'));
+      users[String(chatId)] = { ...users[String(chatId)], ...getUser(chatId), sendTime: newTime };
+      saveUsers();
+      return sendMessage(chatId, `${tr(lang,'setTimeOk')} ${newTime}`);
+    }
+    if (lower.startsWith('/setcity')) {
+      const key = normalizeCityKey(parseCommandArg(text));
+      if (!key || !cities[key]) return sendMessage(chatId, tr(lang,'cityNotFound') + ' /setcity madrid');
+      users[String(chatId)] = { ...users[String(chatId)], ...getUser(chatId), city: key };
+      saveUsers();
+      return sendMessage(chatId, `${tr(lang,'setCityOk')} ${cityLabel(cities[key], lang)}`);
+    }
+    if (lower.startsWith('/setrain')) {
+      const val = Number(parseCommandArg(text));
+      if (Number.isNaN(val) || val < 0 || val > 100) return sendMessage(chatId, '❌ /setrain 50');
+      users[String(chatId)] = { ...users[String(chatId)], ...getUser(chatId), rainThreshold: val };
+      saveUsers();
+      return sendMessage(chatId, `${tr(lang,'rainLimit')}: ${val}%`);
+    }
+    if (lower.startsWith('/lang')) {
+      const selected = normalizeLanguage(parseCommandArg(text));
+      users[String(chatId)] = { ...users[String(chatId)], ...getUser(chatId), language: selected };
+      saveUsers();
+      return sendMessage(chatId, tr(selected,'setLangOk'));
+    }
+    if (lower.startsWith('/adduser')) {
+      if (!isAdminChat(chatId)) return sendMessage(chatId, tr(lang, 'notAdmin'));
+      const newId = parseCommandArg(text);
+      const selected = normalizeLanguage(text.trim().split(/\s+/)[2] || settings.language);
+      if (!newId) return sendMessage(chatId, 'Usage: /adduser 123456789 es');
+      users[String(newId)] = { ...(users[String(newId)] || {}), chatId: String(newId), language: selected, city: 'madrid', sendTime: settings.sendTime, rainThreshold: settings.rainThreshold, isActive: true, createdAt: users[String(newId)]?.createdAt || new Date().toISOString(), lastSeen: users[String(newId)]?.lastSeen || '' };
+      saveUsers();
+      return sendMessage(chatId, tr(lang, 'userAdded'));
+    }
+    if (lower.startsWith('/removeuser')) {
+      if (!isAdminChat(chatId)) return sendMessage(chatId, tr(lang, 'notAdmin'));
+      const remId = parseCommandArg(text);
+      if (!remId || !users[String(remId)]) return sendMessage(chatId, 'User not found');
+      users[String(remId)].isActive = false;
+      saveUsers();
+      return sendMessage(chatId, tr(lang, 'userRemoved'));
+    }
+    if (lower.startsWith('/broadcast')) {
+      if (!isAdminChat(chatId)) return sendMessage(chatId, tr(lang, 'notAdmin'));
+      const message = text.replace(/^\/broadcast\s*/i, '').trim();
+      if (!message) return sendMessage(chatId, 'Usage: /broadcast message');
+      let sent = 0;
+      for (const u of Object.values(users).filter(x => x.isActive !== false)) {
+        try { await sendMessage(u.chatId, message); sent++; } catch (_) {}
+      }
+      return sendMessage(chatId, `${tr(lang, 'broadcastSent')} (${sent})`);
+    }
+    return sendMessage(chatId, tr(lang, 'invalid'));
   } catch (err) { console.error('Webhook processing error:', err.response?.data || err.message); }
 });
+
 
 app.get('/api/admin/settings', adminAuth, (req, res) => res.json({ ok: true, settings, cities }));
 app.post('/api/admin/settings', adminAuth, (req, res) => {
@@ -523,7 +734,7 @@ app.post('/api/admin/cities', adminAuth, (req, res) => {
   try {
     const body = req.body || {}; const key = normalizeCityKey(body.key || body.name); const lat = Number(body.lat); const lon = Number(body.lon);
     if (!key || !body.name || Number.isNaN(lat) || Number.isNaN(lon)) return res.status(400).json({ ok: false, error: 'key, name, lat and lon are required' });
-    cities[key] = { key, name: body.name, fa: body.fa || body.name, lat, lon };
+    cities[key] = { key, name: body.name, fa: body.fa || body.name, es: body.es || body.name, ar: body.ar || body.name, lat, lon };
     if (!settings.selectedCities.includes(key)) settings.selectedCities.push(key);
     saveCities(); saveSettings(); logEvent('admin', `City saved: ${key}`, cities[key]);
     res.json({ ok: true, city: cities[key], cities, settings });
@@ -537,6 +748,47 @@ app.delete('/api/admin/cities/:key', adminAuth, (req, res) => {
   res.json({ ok: true, cities, settings });
 });
 app.get('/api/admin/users', adminAuth, (req, res) => res.json({ ok: true, users: Object.values(users).sort((a,b)=>String(b.lastSeen).localeCompare(String(a.lastSeen))) }));
+app.post('/api/admin/users', adminAuth, (req, res) => {
+  const chatId = String(req.body.chatId || '').trim();
+  if (!chatId) return res.status(400).json({ ok: false, error: 'chatId is required' });
+  const old = users[chatId] || {};
+  users[chatId] = {
+    chatId,
+    firstName: req.body.firstName || old.firstName || '',
+    lastName: req.body.lastName || old.lastName || '',
+    username: req.body.username || old.username || '',
+    languageCode: old.languageCode || '',
+    language: normalizeLanguage(req.body.language || old.language || settings.language),
+    city: normalizeCityKey(req.body.city || old.city || 'madrid'),
+    sendTime: req.body.sendTime || old.sendTime || settings.sendTime || '08:00',
+    rainThreshold: Number(req.body.rainThreshold || old.rainThreshold || settings.rainThreshold || 50),
+    isActive: req.body.isActive !== false,
+    isAdmin: !!req.body.isAdmin || !!old.isAdmin,
+    createdAt: old.createdAt || new Date().toISOString(),
+    lastSeen: old.lastSeen || new Date().toISOString()
+  };
+  saveUsers();
+  logEvent('admin', `User saved: ${chatId}`, users[chatId]);
+  res.json({ ok: true, user: users[chatId], users: Object.values(users) });
+});
+app.delete('/api/admin/users/:chatId', adminAuth, (req, res) => {
+  const id = String(req.params.chatId);
+  if (!users[id]) return res.status(404).json({ ok: false, error: 'User not found' });
+  users[id].isActive = false;
+  saveUsers();
+  logEvent('admin', `User deactivated: ${id}`);
+  res.json({ ok: true, user: users[id] });
+});
+app.post('/api/admin/broadcast', adminAuth, async (req, res) => {
+  const text = String(req.body.text || '').trim();
+  if (!text) return res.status(400).json({ ok: false, error: 'text is required' });
+  let sent = 0, failed = 0;
+  for (const u of Object.values(users).filter(x => x.isActive !== false)) {
+    try { await sendMessage(u.chatId, text); sent++; } catch (_) { failed++; }
+  }
+  logEvent('admin', 'Broadcast sent', { sent, failed });
+  res.json({ ok: true, sent, failed });
+});
 app.get('/api/admin/logs', adminAuth, (req, res) => res.json({ ok: true, logs: logs.slice().reverse() }));
 app.delete('/api/admin/logs', adminAuth, (req, res) => { logs = []; saveLogs(); res.json({ ok: true, logs }); });
 app.post('/api/admin/send-city', adminAuth, async (req, res) => { try { const key = normalizeCityKey(req.body.city || 'madrid'); await sendWeatherToTelegram(DEFAULT_CHAT_ID, key, 'manual'); res.json({ ok: true, sent: key }); } catch (err) { res.status(500).json({ ok: false, error: err.message }); } });

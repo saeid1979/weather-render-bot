@@ -56,6 +56,8 @@
         <label>Key انگلیسی، مثال valencia <input id="cityKey" placeholder="valencia"></label>
         <label>نام انگلیسی <input id="cityName" placeholder="Valencia, Spain"></label>
         <label>نام فارسی <input id="cityFa" placeholder="والنسیا، اسپانیا"></label>
+        <label>نام اسپانیایی <input id="cityEs" placeholder="Valencia, España"></label>
+        <label>نام عربی <input id="cityAr" placeholder="فالنسيا، إسبانيا"></label>
         <label>Latitude <input id="cityLat" type="number" step="any" placeholder="39.4699"></label>
         <label>Longitude <input id="cityLon" type="number" step="any" placeholder="-0.3763"></label>
       </div>
@@ -81,7 +83,30 @@
 
     <section id="tab-users" class="tab card hidden">
       <h2>👥 کاربران تلگرام</h2>
-      <button onclick="loadUsers()">بروزرسانی کاربران</button>
+      <p class="hint">کاربر با /start خودکار ثبت می‌شود. همچنین می‌توانی دستی Chat ID را اضافه کنی.</p>
+      <div class="form-grid">
+        <label>Chat ID <input id="userChatId" placeholder="123456789"></label>
+        <label>نام <input id="userFirstName" placeholder="Saeid"></label>
+        <label>Username <input id="userUsername" placeholder="username بدون @"></label>
+        <label>زبان
+          <select id="userLanguage">
+            <option value="fa">فارسی</option>
+            <option value="es">Español</option>
+            <option value="ar">العربية</option>
+          </select>
+        </label>
+        <label>شهر پیش‌فرض <input id="userCity" placeholder="madrid"></label>
+        <label>ساعت ارسال <input id="userSendTime" type="time" value="08:00"></label>
+        <label>حد بارندگی (%) <input id="userRainThreshold" type="number" value="50"></label>
+        <label><input id="userIsAdmin" type="checkbox"> مدیر باشد</label>
+      </div>
+      <div class="row">
+        <button onclick="saveUser()">افزودن / ویرایش کاربر</button>
+        <button onclick="loadUsers()">بروزرسانی کاربران</button>
+      </div>
+      <h3>ارسال پیام همگانی</h3>
+      <textarea id="broadcastText" rows="4" placeholder="متن پیام برای همه کاربران فعال"></textarea>
+      <button onclick="broadcast()">ارسال همگانی</button>
       <div id="usersBox" class="table-wrap"></div>
     </section>
 

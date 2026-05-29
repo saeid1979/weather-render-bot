@@ -83,10 +83,10 @@ async function saveSettings(){
 function renderCityList(cities){
   const rows = Object.values(cities).map(c=>`
     <tr>
-      <td>${c.key}</td><td>${c.fa || ''}</td><td>${c.name}</td><td>${c.lat}</td><td>${c.lon}</td>
+      <td>${c.key}</td><td>${c.fa || ''}</td><td>${c.es || ''}</td><td>${c.ar || ''}</td><td>${c.name}</td><td>${c.lat}</td><td>${c.lon}</td>
       <td><button class="small" onclick="editCity('${c.key}')">ویرایش</button><button class="small danger" onclick="deleteCity('${c.key}')">حذف</button></td>
     </tr>`).join('');
-  $("cityList").innerHTML = `<table><thead><tr><th>Key</th><th>فارسی</th><th>English</th><th>Lat</th><th>Lon</th><th>عملیات</th></tr></thead><tbody>${rows}</tbody></table>`;
+  $("cityList").innerHTML = `<table><thead><tr><th>Key</th><th>فارسی</th><th>Español</th><th>العربية</th><th>English</th><th>Lat</th><th>Lon</th><th>عملیات</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function editCity(key){
@@ -95,6 +95,8 @@ function editCity(key){
   $("cityKey").value = c.key;
   $("cityName").value = c.name;
   $("cityFa").value = c.fa || '';
+  $("cityEs").value = c.es || '';
+  $("cityAr").value = c.ar || '';
   $("cityLat").value = c.lat;
   $("cityLon").value = c.lon;
   showTab('cities');
@@ -106,6 +108,8 @@ async function addCity(){
       key: $("cityKey").value.trim(),
       name: $("cityName").value.trim(),
       fa: $("cityFa").value.trim(),
+      es: $("cityEs").value.trim(),
+      ar: $("cityAr").value.trim(),
       lat: Number($("cityLat").value),
       lon: Number($("cityLon").value)
     };
@@ -127,10 +131,71 @@ async function deleteCity(key){
 async function loadUsers(){
   try{
     const data = await api('/api/admin/users');
-    const rows = data.users.map(u=>`<tr><td>${u.chatId}</td><td>${u.firstName || ''} ${u.lastName || ''}</td><td>${u.username ? '@'+u.username : ''}</td><td>${u.languageCode || ''}</td><td>${u.lastSeen || ''}</td></tr>`).join('');
-    $("usersBox").innerHTML = `<table><thead><tr><th>Chat ID</th><th>نام</th><th>Username</th><th>Lang</th><th>Last Seen</th></tr></thead><tbody>${rows}</tbody></table>`;
+    const rows = data.users.map(u=>`<tr>
+      <td>${u.chatId}</td>
+      <td>${u.firstName || ''} ${u.lastName || ''}</td>
+      <td>${u.username ? '@'+u.username : ''}</td>
+      <td>${u.language || u.languageCode || ''}</td>
+      <td>${u.city || ''}</td>
+      <td>${u.sendTime || ''}</td>
+      <td>${u.rainThreshold ?? ''}%</td>
+      <td>${u.isActive === false ? 'غیرفعال' : 'فعال'}</td>
+      <td>${u.isAdmin ? 'Admin' : ''}</td>
+      <td>${u.lastSeen || ''}</td>
+      <td><button class="small" onclick="editUser('${u.chatId}')">ویرایش</button><button class="small danger" onclick="deleteUser('${u.chatId}')">غیرفعال</button></td>
+    </tr>`).join('');
+    window.__users = data.users;
+    $("usersBox").innerHTML = `<table><thead><tr><th>Chat ID</th><th>نام</th><th>Username</th><th>Lang</th><th>City</th><th>Time</th><th>Rain</th><th>Status</th><th>Role</th><th>Last Seen</th><th>عملیات</th></tr></thead><tbody>${rows}</tbody></table>`;
   }catch(e){ out(e); }
 }
+
+function editUser(chatId){
+  const u = (window.__users || []).find(x => String(x.chatId) === String(chatId));
+  if(!u) return;
+  $("userChatId").value = u.chatId || '';
+  $("userFirstName").value = u.firstName || '';
+  $("userUsername").value = u.username || '';
+  $("userLanguage").value = u.language || 'fa';
+  $("userCity").value = u.city || 'madrid';
+  $("userSendTime").value = u.sendTime || '08:00';
+  $("userRainThreshold").value = u.rainThreshold || 50;
+  $("userIsAdmin").checked = !!u.isAdmin;
+  showTab('users');
+}
+
+async function saveUser(){
+  try{
+    const body = {
+      chatId: $("userChatId").value.trim(),
+      firstName: $("userFirstName").value.trim(),
+      username: $("userUsername").value.trim(),
+      language: $("userLanguage").value,
+      city: $("userCity").value.trim() || 'madrid',
+      sendTime: $("userSendTime").value || '08:00',
+      rainThreshold: Number($("userRainThreshold").value || 50),
+      isAdmin: $("userIsAdmin").checked,
+      isActive: true
+    };
+    const data = await api('/api/admin/users', {method:'POST', body:JSON.stringify(body)});
+    out(data);
+    await loadUsers();
+  }catch(e){ out(e); }
+}
+
+async function deleteUser(chatId){
+  if(!confirm(`کاربر ${chatId} غیرفعال شود؟`)) return;
+  try{ out(await api(`/api/admin/users/${chatId}`, {method:'DELETE'})); await loadUsers(); }
+  catch(e){ out(e); }
+}
+
+async function broadcast(){
+  try{
+    const text = $("broadcastText").value.trim();
+    const data = await api('/api/admin/broadcast', {method:'POST', body:JSON.stringify({text})});
+    out(data);
+  }catch(e){ out(e); }
+}
+
 
 async function loadLogs(){
   try{

@@ -1,23 +1,33 @@
-# Weather Render Bot + Full Admin Panel + Live Map
+# Weather Render Bot - Multi User + Spanish/Arabic
 
-قابلیت‌ها:
-- بات تلگرام با دکمه‌های انتخاب شهر
-- گزارش متنی آب‌وهوا
-- نمودار تصویری PNG
-- هشدار فوری هر ۳۰ دقیقه
-- خلاصه هوشمند AI-like
-- تنظیم ساعت ارسال روزانه با `/settime 08:00`
-- پنل مدیریت وب
-- نقشه زنده آب‌وهوا در `/map`
+قابلیت‌های این نسخه:
+
+- ثبت خودکار کاربر با `/start`
+- اضافه کردن کاربر از پنل مدیریت وب
+- اضافه کردن کاربر از تلگرام با `/adduser`
+- غیرفعال کردن کاربر با `/removeuser`
+- تنظیم زبان کاربر: فارسی، اسپانیایی، عربی
+- تنظیم شهر پیش‌فرض هر کاربر
+- تنظیم ساعت ارسال روزانه برای هر کاربر
+- تنظیم حد هشدار بارندگی برای هر کاربر
+- ارسال همگانی Broadcast به همه کاربران فعال
+- ارسال گزارش روزانه چندکاربره به‌صورت خودکار
+- گزارش دستی از ساعت فعلی تا 24:00 همان روز
+- نقشه زنده و کلیک روی هر نقطه برای دریافت آب‌وهوا
+- پنل مدیریت کاربران، شهرها، لاگ‌ها، هشدارها و تنظیمات
 
 ## Render Environment Variables
 
 ```env
 TELEGRAM_BOT_TOKEN=your_bot_token
-TELEGRAM_CHAT_ID=your_chat_id
+TELEGRAM_CHAT_ID=your_admin_chat_id
 PUBLIC_URL=https://weather-render-bot.onrender.com
 TIMEZONE=Europe/Madrid
 RAIN_THRESHOLD=50
+WIND_WARNING_KMH=55
+UV_WARNING=7
+HEAT_WARNING_C=35
+COLD_WARNING_C=0
 ENABLE_INTERNAL_CRON=true
 ADMIN_PASSWORD=your_admin_password
 ```
@@ -51,38 +61,50 @@ Live map:
 https://weather-render-bot.onrender.com/map
 ```
 
-Telegram commands:
+## Telegram User Commands
+
 ```text
 /start
 /menu
+/help
 /map
 /weather madrid
 /chart tehran
 /all
+/setcity madrid
 /settime 08:00
-/settings
+/setrain 50
+/lang fa
+/lang es
+/lang ar
+/mysettings
 ```
 
+## Telegram Admin Commands
 
-## Click anywhere on map
-در صفحه `/map` علاوه بر چهار شهر ثبت‌شده، با کلیک روی هر نقطه از نقشه، مختصات همان نقطه خوانده می‌شود و گزارش آب‌وهوا، بارندگی، باد، UV و AQI نمایش داده می‌شود.
+Only admin chat id can use these commands. Admin is the `TELEGRAM_CHAT_ID` user.
 
-## Update: manual Telegram report range
+```text
+/adduser 123456789 es
+/removeuser 123456789
+/broadcast متن پیام برای همه کاربران
+```
 
-Manual Telegram requests now use a dynamic time range:
+## Languages
 
-- `/weather madrid`
-- `/chart tehran`
-- `/all`
-- city buttons in `/menu`
-- chart buttons in `/menu`
-- manual send from admin panel
+- Persian: `/lang fa`
+- Spanish: `/lang es`
+- Arabic: `/lang ar`
 
-These requests calculate weather from the current hour in `TIMEZONE` until 24:00 of the same day.
+The bot will send weather reports, settings messages, menu labels and AI summaries in the user's selected language.
 
-The automatic daily report still uses the scheduled daily report logic and checks the day from 08:00 to 24:00.
+## Multi-user daily reports
 
-Examples:
+Each active user has their own:
 
-- If the user asks at 11:20, the bot checks 11:00 to 24:00.
-- If the user asks at 18:45, the bot checks 18:00 to 24:00.
+- `city`
+- `sendTime`
+- `language`
+- `rainThreshold`
+
+The scheduler checks every minute and sends the daily report to users whose configured time has arrived.
