@@ -109,13 +109,28 @@ function inferBotKeyForChat(chatId) {
   return DEFAULT_BOT_KEY;
 }
 function getBotToken(botKey = DEFAULT_BOT_KEY) {
-  const key = normalizeBotKey(botKey);
-  const token = BOT_TOKENS[key];
-  if (!token) throw new Error(`Bot token not found for botKey: ${botKey}`);
-  return token;
+  return getBotTokenStrict(botKey);
 }
 function listBots() {
   return Object.keys(BOT_TOKENS).map(key => ({ key, isDefault: key === DEFAULT_BOT_KEY }));
+}
+function canonicalBotKey(input) {
+  return String(input || DEFAULT_BOT_KEY || 'main').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || DEFAULT_BOT_KEY;
+}
+function looksLikeTelegramBotToken(token) {
+  return /^\d{6,}:[-_A-Za-z0-9]{20,}$/.test(String(token || '').trim());
+}
+function botTokenStatus(botKey = DEFAULT_BOT_KEY) {
+  const key = canonicalBotKey(botKey);
+  const token = BOT_TOKENS[key];
+  if (!token) return { ok: false, key, error: `Missing token for botKey "${key}". Add BOT_TOKEN_${key.toUpperCase()} in Render Environment.` };
+  if (!looksLikeTelegramBotToken(token)) return { ok: false, key, error: `Invalid token format for botKey "${key}". This must be the BotFather token, not a Chat ID.` };
+  return { ok: true, key };
+}
+function getBotTokenStrict(botKey = DEFAULT_BOT_KEY) {
+  const status = botTokenStatus(botKey);
+  if (!status.ok) throw new Error(status.error);
+  return BOT_TOKENS[status.key];
 }
 function botKeyFromReq(req) {
   return normalizeBotKey(req.params?.botKey || req.query?.botKey || DEFAULT_BOT_KEY);
@@ -859,31 +874,104 @@ app.delete('/api/admin/users/:chatId', adminAuth, (req, res) => {
 app.post('/api/admin/broadcast', adminAuth, async (req, res) => {
   const text = String(req.body.text || '').trim();
   if (!text) return res.status(400).json({ ok: false, error: 'text is required' });
-  const targetBotKey = req.body.botKey ? normalizeBotKey(req.body.botKey) : null;
-  const targetUsers = Object.values(users).filter(x => x.isActive !== false && (!targetBotKey || normalizeBotKey(x.botKey) === targetBotKey));
+
+  const requestedBotKeyRaw = String(req.body.botKey || '').trim();
+  const targetBotKey = requestedBotKeyRaw ? canonicalBotKey(requestedBotKeyRaw) : null;
+
+  const allUsers = Object.values(users || {});
+  const targetUsers = allUsers.filter(u => {
+    if (u.isActive === false || !u.chatId) return false;
+    const userBotKey = canonicalBotKey(u.botKey || DEFAULT_BOT_KEY);
+    return !targetBotKey || userBotKey === targetBotKey;
+  });
+
   const results = [];
+
   for (const u of targetUsers) {
-    const botKey = normalizeBotKey(u.botKey || DEFAULT_BOT_KEY);
-    const row = { chatId: u.chatId, botKey, username: u.username || '', firstName: u.firstName || '', ok: false, status: 'failed', description: '' };
+    const userBotKey = canonicalBotKey(u.botKey || DEFAULT_BOT_KEY);
+    const row = {
+      chatId: String(u.chatId),
+      botKey: userBotKey,
+      username: u.username || '',
+      firstName: u.firstName || '',
+      ok: false,
+      status: 'failed',
+      errorCode: null,
+      description: ''
+    };
+
+    const tokenState = botTokenStatus(userBotKey);
+    if (!tokenState.ok) {
+      row.status = 'bot_token_missing_or_invalid';
+      row.description = tokenState.error;
+      logEvent('broadcast_error', `❌ ${tokenState.error} for ${userBotKey}:${u.chatId}`, row);
+      results.push(row);
+      continue;
+    }
+
     try {
-      const r = await sendMessage(u.chatId, text, {}, botKey);
-      row.ok = true; row.status = 'sent'; row.messageId = r.data?.result?.message_id;
-      logEvent('broadcast', `✅ Sent to ${botKey}:${u.chatId}`, row);
+      const token = getBotTokenStrict(userBotKey);
+      const response = await axios.post(
+        `https://api.telegram.org/bot${token}/sendMessage`,
+        {
+          chat_id: row.chatId,
+          text,
+          parse_mode: 'HTML',
+          disable_web_page_preview: true
+        },
+        { timeout: 20000 }
+      );
+      row.ok = true;
+      row.status = 'sent';
+      row.messageId = response.data?.result?.message_id;
+      row.description = 'Message sent successfully';
+      logEvent('broadcast', `✅ Sent to ${userBotKey}:${u.chatId}`, row);
     } catch (err) {
       const tg = err.response?.data;
       row.errorCode = tg?.error_code || null;
       row.description = tg?.description || err.message;
-      if (row.errorCode === 403) row.status = 'blocked_or_not_started_for_this_bot';
-      if (row.errorCode === 400) row.status = 'chat_not_found_or_bad_request';
-      logEvent('broadcast_error', `❌ Failed to ${botKey}:${u.chatId}`, row);
+
+      if (row.errorCode === 401) row.status = 'invalid_bot_token';
+      else if (row.errorCode === 403) row.status = 'blocked_or_not_started_for_this_bot';
+      else if (row.errorCode === 400) row.status = 'chat_not_found_or_bad_request';
+      else if (err.code === 'ECONNABORTED') row.status = 'telegram_timeout';
+      else row.status = 'telegram_error';
+
+      logEvent('broadcast_error', `❌ Failed to ${userBotKey}:${u.chatId}`, row);
     }
+
     results.push(row);
   }
+
   const sent = results.filter(x => x.ok).length;
   const failed = results.length - sent;
-  logEvent('admin', 'Broadcast completed', { sent, failed, total: results.length, targetBotKey: targetBotKey || 'all' });
-  res.json({ ok: true, total: results.length, sent, failed, results });
+  const byBot = results.reduce((acc, r) => {
+    acc[r.botKey] = acc[r.botKey] || { total: 0, sent: 0, failed: 0 };
+    acc[r.botKey].total += 1;
+    if (r.ok) acc[r.botKey].sent += 1;
+    else acc[r.botKey].failed += 1;
+    return acc;
+  }, {});
+
+  logEvent('admin', 'Broadcast completed', { sent, failed, total: results.length, targetBotKey: targetBotKey || 'all', byBot });
+  res.json({ ok: true, total: results.length, sent, failed, targetBotKey: targetBotKey || 'all', byBot, results });
 });
+app.get('/api/admin/bot-status', adminAuth, (req, res) => {
+  const bots = Object.keys(BOT_TOKENS).map(key => ({
+    key,
+    isDefault: key === DEFAULT_BOT_KEY,
+    configured: !!BOT_TOKENS[key],
+    validFormat: looksLikeTelegramBotToken(BOT_TOKENS[key]),
+    tokenHint: BOT_TOKENS[key] ? String(BOT_TOKENS[key]).slice(0, 8) + '...' : ''
+  }));
+  const userStats = Object.values(users || {}).reduce((acc, u) => {
+    const key = canonicalBotKey(u.botKey || DEFAULT_BOT_KEY);
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  res.json({ ok: true, defaultBotKey: DEFAULT_BOT_KEY, bots, userStats });
+});
+
 app.get('/api/admin/logs', adminAuth, (req, res) => res.json({ ok: true, logs: logs.slice().reverse() }));
 app.delete('/api/admin/logs', adminAuth, (req, res) => { logs = []; saveLogs(); res.json({ ok: true, logs }); });
 app.post('/api/admin/send-city', adminAuth, async (req, res) => { try { const key = normalizeCityKey(req.body.city || 'madrid'); await sendWeatherToTelegram(DEFAULT_CHAT_ID, key, 'manual', normalizeBotKey(req.body.botKey)); res.json({ ok: true, sent: key, botKey: normalizeBotKey(req.body.botKey) }); } catch (err) { res.status(500).json({ ok: false, error: err.message }); } });
