@@ -146,7 +146,7 @@ async function loadUsers(){
       <td>${u.isActive === false ? 'غیرفعال' : 'فعال'}</td>
       <td>${u.isAdmin ? 'Admin' : ''}</td>
       <td>${u.lastSeen || ''}</td>
-      <td><button class="small" onclick="editUser('${u.storageKey || ((u.botKey||'main')+':'+u.chatId)}')">ویرایش</button><button class="small danger" onclick="deleteUser('${u.chatId}','${u.botKey || 'main'}')">غیرفعال</button></td>
+      <td><button class="small" onclick="editUser('${u.storageKey || ((u.botKey||'main')+':'+u.chatId)}')">ویرایش</button><button class="small" onclick="testUser('${u.chatId}','${u.botKey || 'main'}')">تست ارسال</button><button class="small danger" onclick="deleteUser('${u.chatId}','${u.botKey || 'main'}')">غیرفعال</button></td>
     </tr>`).join('');
     window.__users = data.users;
     $("usersBox").innerHTML = `<table><thead><tr><th>Bot</th><th>Chat ID</th><th>نام</th><th>Username</th><th>Lang</th><th>City</th><th>Time</th><th>Rain</th><th>Status</th><th>Role</th><th>Last Seen</th><th>عملیات</th></tr></thead><tbody>${rows}</tbody></table>`;
@@ -223,7 +223,12 @@ async function clearLogs(){
 }
 
 async function sendNow(){
-  try{ out(await api("/api/admin/send-now",{method:"POST",body:"{}"})); }
+  try{ out(await api("/api/admin/send-daily-to-all",{method:"POST",body:"{}"})); await loadLogs(); }
+  catch(e){ out(e); }
+}
+
+async function testUser(chatId, botKey='main'){
+  try{ out(await api(`/api/admin/test-user/${encodeURIComponent(botKey)}/${encodeURIComponent(chatId)}`)); await loadLogs(); }
   catch(e){ out(e); }
 }
 

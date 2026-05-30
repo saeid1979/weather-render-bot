@@ -1,106 +1,58 @@
-# Weather Render Bot - Multi-Bot + Multi-User
+# Weather Render Bot - Fixed Multi-Bot Broadcast + Daily Scheduler
 
-این نسخه از چند بات تلگرام همزمان پشتیبانی می‌کند. هر کاربر علاوه بر `chatId` یک `botKey` دارد، بنابراین اگر یک Chat ID مربوط به بات دوم باشد، پیام با توکن همان بات دوم ارسال می‌شود.
+## Important Render Environment Variables
 
-## قابلیت‌های مهم
-
-- چند بات با چند Bot Token
-- Webhook جدا برای هر بات
-- ثبت خودکار کاربر با `/start` در همان باتی که پیام داده است
-- ذخیره `botKey + chatId` برای هر کاربر
-- ارسال همگانی به همه بات‌ها یا فقط یک بات خاص
-- نمایش نتیجه ارسال برای هر کاربر: ارسال شد، Block/Not Started، Chat Not Found
-- پشتیبانی زبان فارسی، اسپانیایی و عربی
-- پنل مدیریت کاربران، شهرها، لاگ‌ها، هشدارها و تنظیمات
-- نقشه زنده و گزارش دستی از لحظه درخواست تا 24:00
-
-## Render Environment Variables
+Required:
 
 ```env
-TELEGRAM_BOT_TOKEN=توکن_بات_اصلی
-TELEGRAM_CHAT_ID=چت_آیدی_ادمین_در_بات_اصلی
-BOT_TOKEN_SECOND=توکن_بات_دوم
-BOT_TOKEN_RESTAURANT=توکن_بات_سوم_اختیاری
+TELEGRAM_BOT_TOKEN=MAIN_BOT_TOKEN_FROM_BOTFATHER
+TELEGRAM_CHAT_ID=74774761
+BOT_TOKEN_SECOND=SECOND_BOT_TOKEN_FROM_BOTFATHER
 DEFAULT_BOT_KEY=main
 PUBLIC_URL=https://weather-render-bot.onrender.com
+ADMIN_PASSWORD=YOUR_ADMIN_PASSWORD
 TIMEZONE=Europe/Madrid
 RAIN_THRESHOLD=50
 ENABLE_INTERNAL_CRON=true
-ADMIN_PASSWORD=رمز_پنل
 ```
 
-روش JSON هم پشتیبانی می‌شود:
+Optional but recommended for reliable scheduled sending on Render Free:
 
 ```env
-BOT_TOKENS_JSON={"main":"token1","second":"token2"}
+CRON_SECRET=make_a_random_secret
 ```
 
-## Deploy
+Then create an external cron-job.org job to open this URL every 1 minute or every 5 minutes:
 
-Build Command:
-
-```bash
-npm install
+```text
+https://weather-render-bot.onrender.com/api/cron/tick?secret=YOUR_CRON_SECRET
 ```
 
-Start Command:
+Why: Render Free Web Services can sleep when inactive, so internal node-cron may not run while the app is sleeping.
 
-```bash
-npm start
-```
+## After deploy
 
-بعد از Deploy این لینک را باز کن تا Webhook همه بات‌ها تنظیم شود:
+Open:
 
 ```text
 https://weather-render-bot.onrender.com/api/set-webhook
 ```
 
-اگر درست باشد، خروجی شامل چند webhook مثل این می‌شود:
+## Test users
 
-```text
-/webhook/main
-/webhook/second
-```
-
-## دستورات تلگرام
+In each bot account:
 
 ```text
 /start
-/menu
 /chatid
 /mybot
-/weather madrid
-/chart tehran
-/all
-/setcity madrid
-/settime 08:00
-/setrain 50
-/lang fa
-/lang es
-/lang ar
-/adduser 914709600 ar second
-/broadcast پیام تست
 ```
 
-## نکته مهم
+## Admin Panel Tests
 
-هر کاربر باید در همان باتی که قرار است از آن پیام بگیرد `/start` بزند. اگر کاربر در بات دوم `/start` زده باشد، باید با `botKey=second` ذخیره شود.
+Use:
 
-## آخرین اصلاحات این نسخه
+- Broadcast: sends custom message to all active users using each user's botKey.
+- تست ارسال: sends a direct test message to a selected user.
+- ارسال گزارش دستی: sends daily weather report manually to all active users.
 
-- پشتیبانی زبان پیش‌فرض هر کاربر: وقتی کاربر با `/language` یا دکمه زبان، زبان خود را انتخاب کند، مقدار `language` در `users.json` ذخیره می‌شود و گزارش‌ها، منو و پیام‌های بعدی با همان زبان ارسال می‌شوند.
-- اصلاح Broadcast برای Multi-Bot: ارسال همگانی برای هر کاربر با `botKey` خودش انجام می‌شود؛ برای `main` از `TELEGRAM_BOT_TOKEN` و برای `second` از `BOT_TOKEN_SECOND` استفاده می‌شود.
-- اضافه شدن دو شهر جدید به لیست پیش‌فرض، منوی تلگرام، نقشه و پنل:
-  - Nouakchott, Mauritania
-  - Bordeaux, France
-
-### نمونه دستورات شهرهای جدید
-
-```text
-/weather nouakchott
-/weather bordeaux
-/chart nouakchott
-/chart bordeaux
-/setcity nouakchott
-/setcity bordeaux
-```

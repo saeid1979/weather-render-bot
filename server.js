@@ -501,20 +501,41 @@ async function sendAllDailyReport(chatId = DEFAULT_CHAT_ID, mode = 'manual', bot
     try { await sendWeatherToTelegram(chatId, key, mode, botKey); } catch (err) { await sendMessage(chatId, `❌ ${key}: ${err.message}`, {}, botKey); }
   }
 }
-async function sendDailyReportsToDueUsers() {
+async function sendDailyReportsToDueUsers(force = false) {
   const today = todayDateString();
   const nowTime = new Intl.DateTimeFormat('en-GB', { timeZone: TIMEZONE, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
-  const allUsers = Object.values(users).filter(u => u.isActive !== false);
+  const allUsers = Object.values(users).filter(u => u.isActive !== false && u.chatId);
+  const results = [];
   for (const u of allUsers) {
+    const userBotKey = canonicalBotKey(u.botKey || DEFAULT_BOT_KEY);
     const due = u.sendTime || settings.sendTime || '08:00';
-    const sentKey = `${today}:${u.chatId}`;
-    if (nowTime === due && sentDaily[sentKey] !== due) {
-      await sendAllDailyReport(u.chatId, 'daily', u.botKey || DEFAULT_BOT_KEY);
-      sentDaily[sentKey] = due;
-      saveSentDaily();
-      logEvent('daily', `Daily report sent to user ${u.chatId}`, { chatId: u.chatId, due });
+    const sentKey = `${today}:${userBotKey}:${u.chatId}`;
+    if ((force || nowTime === due) && sentDaily[sentKey] !== due) {
+      const row = { chatId: String(u.chatId), botKey: userBotKey, due, ok: false, status: 'failed', description: '' };
+      try {
+        const tokenState = botTokenStatus(userBotKey);
+        if (!tokenState.ok) throw new Error(tokenState.error);
+        await sendAllDailyReport(u.chatId, 'daily', userBotKey);
+        sentDaily[sentKey] = due;
+        saveSentDaily();
+        row.ok = true;
+        row.status = 'sent';
+        row.description = 'Daily report sent';
+        logEvent('daily', `✅ Daily report sent to ${userBotKey}:${u.chatId}`, row);
+      } catch (err) {
+        const tg = err.response?.data;
+        row.errorCode = tg?.error_code || null;
+        row.description = tg?.description || err.message;
+        if (row.errorCode === 401) row.status = 'invalid_bot_token';
+        else if (row.errorCode === 403) row.status = 'blocked_or_not_started_for_this_bot';
+        else if (row.errorCode === 400) row.status = 'chat_not_found_or_bad_request';
+        else row.status = 'telegram_error';
+        logEvent('daily_error', `❌ Daily failed to ${userBotKey}:${u.chatId}`, row);
+      }
+      results.push(row);
     }
   }
+  return { ok: true, nowTime, total: results.length, sent: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok).length, results };
 }
 const alertMemory = new Map();
 function shouldAlert(cityKey, alertText) {
@@ -540,7 +561,7 @@ async function checkRealTimeAlerts() {
         const opts = userOptions(u);
         const title = lang === 'es' ? 'Alerta meteorológica inmediata' : lang === 'ar' ? 'تنبيه طقس فوري' : 'هشدار فوری آب‌وهوا';
         const quick = lang === 'es' ? 'Análisis rápido' : lang === 'ar' ? 'تحليل سريع' : 'تحلیل سریع';
-        await sendMessage(u.chatId, `🚨 ${title}\n📍 ${cityLabel(city, lang)}\n\n${filtered.map(a => `⚠️ ${a}`).join('\n')}\n\n🤖 ${quick}:\n${aiLikeSummary(city, summary, filtered, lang, opts)}`);
+        await sendMessage(u.chatId, `🚨 ${title}\n📍 ${cityLabel(city, lang)}\n\n${filtered.map(a => `⚠️ ${a}`).join('\n')}\n\n🤖 ${quick}:\n${aiLikeSummary(city, summary, filtered, lang, opts)}`, {}, u.botKey || DEFAULT_BOT_KEY);
       }
       logEvent('alert', `Real-time alert sent for ${key}`, { alerts: filtered, users: activeUsers.length });
     } catch (err) { console.log('Real-time alert error:', key, err.message); }
@@ -993,6 +1014,36 @@ app.get('/api/admin/logs', adminAuth, (req, res) => res.json({ ok: true, logs: l
 app.delete('/api/admin/logs', adminAuth, (req, res) => { logs = []; saveLogs(); res.json({ ok: true, logs }); });
 app.post('/api/admin/send-city', adminAuth, async (req, res) => { try { const key = normalizeCityKey(req.body.city || 'madrid'); await sendWeatherToTelegram(DEFAULT_CHAT_ID, key, 'manual', normalizeBotKey(req.body.botKey)); res.json({ ok: true, sent: key, botKey: normalizeBotKey(req.body.botKey) }); } catch (err) { res.status(500).json({ ok: false, error: err.message }); } });
 app.post('/api/admin/send-now', adminAuth, async (req, res) => { try { await sendAllDailyReport(DEFAULT_CHAT_ID, 'manual', normalizeBotKey(req.body.botKey)); res.json({ ok: true, message: 'Daily report sent', botKey: normalizeBotKey(req.body.botKey) }); } catch (err) { res.status(500).json({ ok: false, error: err.message }); } });
+app.post('/api/admin/send-daily-to-all', adminAuth, async (req, res) => {
+  try {
+    const result = await sendDailyReportsToDueUsers(true);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.response?.data || err.message });
+  }
+});
+app.get('/api/cron/tick', async (req, res) => {
+  try {
+    const secret = process.env.CRON_SECRET || '';
+    if (secret && String(req.query.secret || '') !== String(secret)) return res.status(401).json({ ok: false, error: 'Unauthorized cron secret' });
+    const result = await sendDailyReportsToDueUsers(false);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.response?.data || err.message });
+  }
+});
+app.get('/api/admin/test-user/:botKey/:chatId', adminAuth, async (req, res) => {
+  const botKey = canonicalBotKey(req.params.botKey);
+  const chatId = String(req.params.chatId);
+  try {
+    const tokenState = botTokenStatus(botKey);
+    if (!tokenState.ok) return res.status(400).json({ ok: false, botKey, chatId, status: 'bot_token_missing_or_invalid', error: tokenState.error });
+    const r = await axios.post(`https://api.telegram.org/bot${getBotTokenStrict(botKey)}/sendMessage`, { chat_id: chatId, text: '✅ Telegram delivery test from admin panel' }, { timeout: 20000 });
+    res.json({ ok: true, botKey, chatId, messageId: r.data?.result?.message_id });
+  } catch (err) {
+    res.status(500).json({ ok: false, botKey, chatId, telegram: err.response?.data || err.message });
+  }
+});
 app.post('/api/admin/test-alerts', adminAuth, async (req, res) => { try { await checkRealTimeAlerts(); res.json({ ok: true, message: 'Alert check executed' }); } catch (err) { res.status(500).json({ ok: false, error: err.message }); } });
 
 app.get('/map', (req, res) => res.sendFile(path.join(__dirname, 'public', 'map.html')));
