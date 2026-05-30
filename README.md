@@ -56,3 +56,36 @@ Use:
 - تست ارسال: sends a direct test message to a selected user.
 - ارسال گزارش دستی: sends daily weather report manually to all active users.
 
+
+## Forecast model selection update
+
+This version automatically selects the forecast model source:
+
+- European cities such as Salamanca, Madrid and Bordeaux use ECMWF IFS through Open-Meteo's `models` parameter.
+- Non-European cities such as Tehran, Ardabil and Nouakchott use NOAA GFS through Open-Meteo's `models` parameter.
+- If a selected model is temporarily unavailable or does not return a required variable, the app automatically falls back to Open-Meteo Best Match so Telegram responses do not fail.
+
+Optional Render environment variables:
+
+```env
+ECMWF_MODEL=ecmwf_ifs025
+GFS_MODEL=gfs_seamless
+```
+
+Admin diagnostic endpoint:
+
+```text
+/api/admin/forecast-models
+```
+
+The Telegram report now includes a line like:
+
+```text
+🛰 Model: ECMWF IFS 0.25°
+```
+
+or:
+
+```text
+🛰 Model: NOAA GFS Seamless
+```

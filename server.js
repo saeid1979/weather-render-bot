@@ -64,12 +64,12 @@ const defaultSettings = {
 };
 
 const defaultCities = {
-  salamanca: { key: 'salamanca', name: 'Salamanca, Spain', fa: 'سالامانکا، اسپانیا', es: 'Salamanca, España', ar: 'سالامانكا، إسبانيا', lat: 40.9701, lon: -5.6635 },
-  madrid: { key: 'madrid', name: 'Madrid, Spain', fa: 'مادرید، اسپانیا', es: 'Madrid, España', ar: 'مدريد، إسبانيا', lat: 40.4168, lon: -3.7038 },
-  tehran: { key: 'tehran', name: 'Tehran, Iran', fa: 'تهران، ایران', es: 'Teherán, Irán', ar: 'طهران، إيران', lat: 35.6892, lon: 51.3890 },
-  ardabil: { key: 'ardabil', name: 'Ardabil, Iran', fa: 'اردبیل، ایران', es: 'Ardabil, Irán', ar: 'أردبيل، إيران', lat: 38.2498, lon: 48.2933 },
-  nouakchott: { key: 'nouakchott', name: 'Nouakchott, Mauritania', fa: 'نواکشوت، موریتانی', es: 'Nuakchot, Mauritania', ar: 'نواكشوط، موريتانيا', lat: 18.0735, lon: -15.9582 },
-  bordeaux: { key: 'bordeaux', name: 'Bordeaux, France', fa: 'بوردو، فرانسه', es: 'Burdeos, Francia', ar: 'بوردو، فرنسا', lat: 44.8378, lon: -0.5792 }
+  salamanca: { key: 'salamanca', country: 'Spain', name: 'Salamanca, Spain', fa: 'سالامانکا، اسپانیا', es: 'Salamanca, España', ar: 'سالامانكا، إسبانيا', lat: 40.9701, lon: -5.6635 },
+  madrid: { key: 'madrid', country: 'Spain', name: 'Madrid, Spain', fa: 'مادرید، اسپانیا', es: 'Madrid, España', ar: 'مدريد، إسبانيا', lat: 40.4168, lon: -3.7038 },
+  tehran: { key: 'tehran', country: 'Iran', name: 'Tehran, Iran', fa: 'تهران، ایران', es: 'Teherán, Irán', ar: 'طهران، إيران', lat: 35.6892, lon: 51.3890 },
+  ardabil: { key: 'ardabil', country: 'Iran', name: 'Ardabil, Iran', fa: 'اردبیل، ایران', es: 'Ardabil, Irán', ar: 'أردبيل، إيران', lat: 38.2498, lon: 48.2933 },
+  nouakchott: { key: 'nouakchott', country: 'Mauritania', name: 'Nouakchott, Mauritania', fa: 'نواکشوت، موریتانی', es: 'Nuakchot, Mauritania', ar: 'نواكشوط، موريتانيا', lat: 18.0735, lon: -15.9582 },
+  bordeaux: { key: 'bordeaux', country: 'France', name: 'Bordeaux, France', fa: 'بوردو، فرانسه', es: 'Burdeos, Francia', ar: 'بوردو، فرنسا', lat: 44.8378, lon: -0.5792 }
 };
 
 function clone(x) { return JSON.parse(JSON.stringify(x)); }
@@ -257,7 +257,9 @@ function normalizeCityKey(input) {
     salamanca: 'salamanca', 'سالامانکا': 'salamanca',
     madrid: 'madrid', 'مادرید': 'madrid',
     tehran: 'tehran', 'تهران': 'tehran',
-    ardabil: 'ardabil', ardebil: 'ardabil', 'اردبیل': 'ardabil'
+    ardabil: 'ardabil', ardebil: 'ardabil', 'اردبیل': 'ardabil',
+    nouakchott: 'nouakchott', nuakchot: 'nouakchott', 'نواکشوت': 'nouakchott', 'نواكشوط': 'nouakchott',
+    bordeaux: 'bordeaux', burdeos: 'bordeaux', 'بوردو': 'bordeaux'
   };
   return aliases[raw] || raw.replace(/\s+/g, '-');
 }
@@ -287,22 +289,82 @@ function rangeLabel(mode = 'daily') {
   return `${String(startHour).padStart(2, '0')}:00 تا 24:00`;
 }
 function hourLabel(iso) { return String(iso).slice(11, 16); }
-function buildWeatherUrl(city) {
+const EUROPEAN_COUNTRIES_FOR_ECMWF = new Set([
+  'Spain', 'France', 'Portugal', 'Italy', 'Germany', 'Netherlands', 'Belgium', 'Austria',
+  'Switzerland', 'United Kingdom', 'Ireland', 'Norway', 'Sweden', 'Denmark', 'Finland',
+  'Poland', 'Czechia', 'Slovakia', 'Hungary', 'Romania', 'Bulgaria', 'Greece',
+  'Croatia', 'Slovenia', 'Serbia', 'Bosnia and Herzegovina', 'Albania', 'Montenegro',
+  'North Macedonia', 'Estonia', 'Latvia', 'Lithuania', 'Ukraine', 'Moldova'
+]);
+
+function isEuropeanForecastCity(city) {
+  if (city?.forceModel === 'ecmwf') return true;
+  if (city?.forceModel === 'gfs') return false;
+  if (city?.country && EUROPEAN_COUNTRIES_FOR_ECMWF.has(city.country)) return true;
+  const lat = Number(city?.lat);
+  const lon = Number(city?.lon);
+  // Practical Europe bounding box fallback for user-added cities without country names.
+  return lat >= 34 && lat <= 72 && lon >= -25 && lon <= 45;
+}
+
+function selectForecastModel(city) {
+  if (isEuropeanForecastCity(city)) {
+    return {
+      key: 'ecmwf',
+      openMeteoModel: process.env.ECMWF_MODEL || 'ecmwf_ifs025',
+      label: 'ECMWF IFS 0.25°',
+      provider: 'ECMWF / Open-Meteo'
+    };
+  }
+  return {
+    key: 'gfs',
+    openMeteoModel: process.env.GFS_MODEL || 'gfs_seamless',
+    label: 'NOAA GFS Seamless',
+    provider: 'NOAA GFS / Open-Meteo'
+  };
+}
+
+function buildWeatherUrl(city, options = {}) {
+  const selectedModel = selectForecastModel(city);
+  const modelParam = options.useModel === false ? '' : `&models=${encodeURIComponent(selectedModel.openMeteoModel)}`;
   return `https://api.open-meteo.com/v1/forecast?latitude=${city.lat}&longitude=${city.lon}` +
     `&hourly=temperature_2m,apparent_temperature,precipitation_probability,relative_humidity_2m,wind_speed_10m,uv_index` +
     `&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max,sunrise,sunset,wind_speed_10m_max` +
-    `&timezone=${encodeURIComponent(TIMEZONE)}&forecast_days=2`;
+    `&timezone=${encodeURIComponent(TIMEZONE)}&forecast_days=2${modelParam}`;
 }
 function buildAirUrl(city) {
   return `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${city.lat}&longitude=${city.lon}` +
     `&hourly=us_aqi,pm10,pm2_5&timezone=${encodeURIComponent(TIMEZONE)}&forecast_days=2`;
 }
+async function getWeatherWithModelFallback(city) {
+  const selectedModel = selectForecastModel(city);
+  try {
+    const res = await axios.get(buildWeatherUrl(city, { useModel: true }), { timeout: 15000 });
+    res.data.__forecastModel = selectedModel;
+    res.data.__forecastFallback = false;
+    return res;
+  } catch (err) {
+    // Some manually selected models may temporarily miss a variable or be unavailable for a point.
+    // In that case, use Open-Meteo Best Match so the bot still answers instead of failing.
+    const res = await axios.get(buildWeatherUrl(city, { useModel: false }), { timeout: 15000 });
+    res.data.__forecastModel = { key: 'auto', openMeteoModel: 'best_match', label: 'Open-Meteo Best Match', provider: 'Open-Meteo' };
+    res.data.__forecastFallback = true;
+    res.data.__forecastFallbackReason = err.response?.data || err.message;
+    logEvent('weather_model_fallback', `Model fallback for ${city.key || city.name}`, {
+      city: city.key || city.name,
+      selectedModel,
+      error: err.response?.data || err.message
+    });
+    return res;
+  }
+}
+
 async function fetchWeather(cityKey) {
   const key = normalizeCityKey(cityKey);
   const city = cities[key];
   if (!city) throw new Error('City not found');
   const [weatherRes, airRes] = await Promise.allSettled([
-    axios.get(buildWeatherUrl(city), { timeout: 15000 }),
+    getWeatherWithModelFallback(city),
     axios.get(buildAirUrl(city), { timeout: 15000 })
   ]);
   if (weatherRes.status !== 'fulfilled') throw new Error('Weather API failed');
@@ -322,7 +384,7 @@ async function fetchWeatherForPoint(lat, lon, label = 'Selected Location') {
     lon: longitude
   };
   const [weatherRes, airRes] = await Promise.allSettled([
-    axios.get(buildWeatherUrl(city), { timeout: 15000 }),
+    getWeatherWithModelFallback(city),
     axios.get(buildAirUrl(city), { timeout: 15000 })
   ]);
   if (weatherRes.status !== 'fulfilled') throw new Error('Weather API failed');
@@ -420,9 +482,13 @@ function formatReport(city, weather, air, mode = 'daily', lang = 'fa', opts = se
   const { summary, alerts } = analyzeWeather(city, weather, air, mode, opts);
   const rainHoursText = summary.rainHours.length ? summary.rainHours.map(x => `   ⏰ ${hourLabel(x.time)} → ${x.value}%`).join('\n') : (lang === 'es' ? '   No hay horas por encima del límite.' : lang === 'ar' ? '   لا توجد ساعات أعلى من الحد.' : '   موردی بالای حد هشدار نیست.');
   const alertText = alerts.length ? alerts.map(a => `⚠️ ${a}`).join('\n') : (lang === 'es' ? '✅ No hay alertas importantes.' : lang === 'ar' ? '✅ لا توجد تنبيهات مهمة.' : '✅ هشدار مهمی ثبت نشده است.');
-  if (lang === 'es') return `🌤 Informe inteligente del tiempo\n📍 ${cityLabel(city, lang)}\n🕗 Intervalo: ${rangeLabel(mode)}\n🌍 Zona horaria: ${TIMEZONE}\n\n🌡 Temperatura: ${summary.tempMin ?? '-'} a ${summary.tempMax ?? '-'}°C\n🥵 Sensación máxima: ${summary.apparentMax ?? '-'}°C\n🌧 Probabilidad máxima de lluvia: ${summary.rainMax ?? '-'}%\n💨 Viento máximo: ${summary.windMax ?? '-'} km/h\n💧 Humedad media: ${summary.humidityAvg ?? '-'}%\n☀️ UV máx.: ${summary.uvMax ?? '-'}\n😷 AQI máx.: ${summary.aqiMax ?? '-'}\n🌅 Amanecer: ${summary.sunrise ?? '-'}\n🌇 Atardecer: ${summary.sunset ?? '-'}\n\n🌧 Horas con lluvia por encima de ${opts.rainThreshold}%:\n${rainHoursText}\n\n${alertText}\n\n🤖 Resumen inteligente:\n${aiLikeSummary(city, summary, alerts, lang, opts)}`;
-  if (lang === 'ar') return `🌤 تقرير الطقس الذكي\n📍 ${cityLabel(city, lang)}\n🕗 الفترة: ${rangeLabel(mode)}\n🌍 المنطقة الزمنية: ${TIMEZONE}\n\n🌡 الحرارة: ${summary.tempMin ?? '-'} إلى ${summary.tempMax ?? '-'}°C\n🥵 أعلى إحساس حراري: ${summary.apparentMax ?? '-'}°C\n🌧 أعلى احتمال للأمطار: ${summary.rainMax ?? '-'}%\n💨 أعلى سرعة رياح: ${summary.windMax ?? '-'} km/h\n💧 متوسط الرطوبة: ${summary.humidityAvg ?? '-'}%\n☀️ أعلى UV: ${summary.uvMax ?? '-'}\n😷 أعلى AQI: ${summary.aqiMax ?? '-'}\n🌅 الشروق: ${summary.sunrise ?? '-'}\n🌇 الغروب: ${summary.sunset ?? '-'}\n\n🌧 ساعات المطر فوق ${opts.rainThreshold}%:\n${rainHoursText}\n\n${alertText}\n\n🤖 ملخص ذكي:\n${aiLikeSummary(city, summary, alerts, lang, opts)}`;
-  return `🌤 گزارش هوشمند آب‌وهوا\n📍 ${cityLabel(city, lang)}\n🕗 بازه بررسی: ${rangeLabel(mode)}\n🌍 منطقه زمانی: ${TIMEZONE}\n\n🌡 دما: ${summary.tempMin ?? '-'} تا ${summary.tempMax ?? '-'}°C\n🥵 دمای محسوس حداکثر: ${summary.apparentMax ?? '-'}°C\n🌧 بیشترین احتمال بارندگی: ${summary.rainMax ?? '-'}%\n💨 بیشترین سرعت باد: ${summary.windMax ?? '-'} km/h\n💧 میانگین رطوبت: ${summary.humidityAvg ?? '-'}%\n☀️ UV Max: ${summary.uvMax ?? '-'}\n😷 AQI Max: ${summary.aqiMax ?? '-'}\n🌅 طلوع: ${summary.sunrise ?? '-'}\n🌇 غروب: ${summary.sunset ?? '-'}\n\n🌧 ساعت‌های بارندگی بالای ${opts.rainThreshold}%:\n${rainHoursText}\n\n${alertText}\n\n🤖 خلاصه هوشمند:\n${aiLikeSummary(city, summary, alerts, lang, opts)}`;
+  const modelInfo = weather.__forecastModel || { label: 'Open-Meteo Best Match', provider: 'Open-Meteo' };
+  const modelLine = weather.__forecastFallback
+    ? `🛰 Model: ${modelInfo.label} (fallback)`
+    : `🛰 Model: ${modelInfo.label}`;
+  if (lang === 'es') return `🌤 Informe inteligente del tiempo\n📍 ${cityLabel(city, lang)}\n🕗 Intervalo: ${rangeLabel(mode)}\n🌍 Zona horaria: ${TIMEZONE}\n${modelLine}\n\n🌡 Temperatura: ${summary.tempMin ?? '-'} a ${summary.tempMax ?? '-'}°C\n🥵 Sensación máxima: ${summary.apparentMax ?? '-'}°C\n🌧 Probabilidad máxima de lluvia: ${summary.rainMax ?? '-'}%\n💨 Viento máximo: ${summary.windMax ?? '-'} km/h\n💧 Humedad media: ${summary.humidityAvg ?? '-'}%\n☀️ UV máx.: ${summary.uvMax ?? '-'}\n😷 AQI máx.: ${summary.aqiMax ?? '-'}\n🌅 Amanecer: ${summary.sunrise ?? '-'}\n🌇 Atardecer: ${summary.sunset ?? '-'}\n\n🌧 Horas con lluvia por encima de ${opts.rainThreshold}%:\n${rainHoursText}\n\n${alertText}\n\n🤖 Resumen inteligente:\n${aiLikeSummary(city, summary, alerts, lang, opts)}`;
+  if (lang === 'ar') return `🌤 تقرير الطقس الذكي\n📍 ${cityLabel(city, lang)}\n🕗 الفترة: ${rangeLabel(mode)}\n🌍 المنطقة الزمنية: ${TIMEZONE}\n${modelLine}\n\n🌡 الحرارة: ${summary.tempMin ?? '-'} إلى ${summary.tempMax ?? '-'}°C\n🥵 أعلى إحساس حراري: ${summary.apparentMax ?? '-'}°C\n🌧 أعلى احتمال للأمطار: ${summary.rainMax ?? '-'}%\n💨 أعلى سرعة رياح: ${summary.windMax ?? '-'} km/h\n💧 متوسط الرطوبة: ${summary.humidityAvg ?? '-'}%\n☀️ أعلى UV: ${summary.uvMax ?? '-'}\n😷 أعلى AQI: ${summary.aqiMax ?? '-'}\n🌅 الشروق: ${summary.sunrise ?? '-'}\n🌇 الغروب: ${summary.sunset ?? '-'}\n\n🌧 ساعات المطر فوق ${opts.rainThreshold}%:\n${rainHoursText}\n\n${alertText}\n\n🤖 ملخص ذكي:\n${aiLikeSummary(city, summary, alerts, lang, opts)}`;
+  return `🌤 گزارش هوشمند آب‌وهوا\n📍 ${cityLabel(city, lang)}\n🕗 بازه بررسی: ${rangeLabel(mode)}\n🌍 منطقه زمانی: ${TIMEZONE}\n${modelLine}\n\n🌡 دما: ${summary.tempMin ?? '-'} تا ${summary.tempMax ?? '-'}°C\n🥵 دمای محسوس حداکثر: ${summary.apparentMax ?? '-'}°C\n🌧 بیشترین احتمال بارندگی: ${summary.rainMax ?? '-'}%\n💨 بیشترین سرعت باد: ${summary.windMax ?? '-'} km/h\n💧 میانگین رطوبت: ${summary.humidityAvg ?? '-'}%\n☀️ UV Max: ${summary.uvMax ?? '-'}\n😷 AQI Max: ${summary.aqiMax ?? '-'}\n🌅 طلوع: ${summary.sunrise ?? '-'}\n🌇 غروب: ${summary.sunset ?? '-'}\n\n🌧 ساعت‌های بارندگی بالای ${opts.rainThreshold}%:\n${rainHoursText}\n\n${alertText}\n\n🤖 خلاصه هوشمند:\n${aiLikeSummary(city, summary, alerts, lang, opts)}`;
 }
 
 
@@ -840,6 +906,13 @@ Chat ID: <code>${chatId}</code>`, {}, botKey);
 
 
 app.get('/api/admin/settings', adminAuth, (req, res) => res.json({ ok: true, settings, cities, bots: listBots(), defaultBotKey: DEFAULT_BOT_KEY }));
+app.get('/api/admin/forecast-models', adminAuth, (req, res) => {
+  const result = {};
+  for (const [key, city] of Object.entries(cities)) {
+    result[key] = { city: cityLabel(city, 'en'), country: city.country || '', ...selectForecastModel(city) };
+  }
+  res.json({ ok: true, models: result, ecmwfModel: process.env.ECMWF_MODEL || 'ecmwf_ifs025', gfsModel: process.env.GFS_MODEL || 'gfs_seamless' });
+});
 app.post('/api/admin/settings', adminAuth, (req, res) => {
   try {
     const allowed = ['sendTime','language','rainThreshold','windWarningKmh','uvWarning','heatWarningC','coldWarningC','realTimeAlerts','dailyReport','selectedCities','alertCooldownMinutes'];
