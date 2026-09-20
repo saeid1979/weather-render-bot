@@ -42,6 +42,16 @@ const TIMEZONE = process.env.TIMEZONE || 'Europe/Madrid';
 const PORT = process.env.PORT || 3000;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
 
+const NEWS_ENABLED = process.env.NEWS_ENABLED !== 'false';
+const NEWS_RSS_URL = process.env.NEWS_RSS_URL || 'https://news.google.com/rss/headlines/section/topic/WORLD?hl=fa&gl=IR&ceid=IR:fa';
+const NEWS_MAX_ITEMS = Math.max(1, Math.min(8, Number(process.env.NEWS_MAX_ITEMS || 5)));
+const NEWS_MAX_AGE_MINUTES = Math.max(30, Number(process.env.NEWS_MAX_AGE_MINUTES || 180));
+const FX_ENABLED = process.env.FX_ENABLED !== 'false';
+const FX_REPORT_TIME = process.env.FX_REPORT_TIME || '08:00';
+const FX_API_URL = process.env.FX_API_URL || 'https://open.er-api.com/v6/latest/USD';
+const FX_CURRENCIES = (process.env.FX_CURRENCIES || 'USD,EUR,GBP,AED,TRY,CAD,CHF,JPY,CNY,AUD')
+  .split(',').map(x => x.trim().toUpperCase()).filter(Boolean);
+
 const SETTINGS_PATH = path.join(__dirname, 'settings.json');
 const CITIES_PATH = path.join(__dirname, 'cities.json');
 const USERS_PATH = path.join(__dirname, 'users.json');
@@ -106,6 +116,8 @@ for (const cityKey of ['nouakchott', 'bordeaux']) {
 saveCities();
 saveSettings();
 let sentDaily = loadJson(SENT_PATH, {});
+if (!Array.isArray(sentDaily.__newsLinks)) sentDaily.__newsLinks = [];
+if (typeof sentDaily.__fxDate !== 'string') sentDaily.__fxDate = '';
 
 function saveSettings() { saveJson(SETTINGS_PATH, settings); }
 function saveCities() { saveJson(CITIES_PATH, cities); }
@@ -223,7 +235,7 @@ const TR = {
     settingsText: '⚙️ تنظیمات شما', dailyTime: '⏰ ساعت ارسال', rainLimit: '🌧 حد بارندگی', city: '🏙 شهر', language: '🌐 زبان', active: '✅ فعال', inactive: '⛔ غیرفعال',
     setTimeOk: '✅ ساعت ارسال روزانه شما تغییر کرد به', setTimeBad: '❌ فرمت درست: /settime 08:00',
     setCityOk: '✅ شهر پیش‌فرض شما تغییر کرد به', setLangOk: '✅ زبان شما تغییر کرد به فارسی',
-    help: 'دستورها:\n/menu\n/weather madrid\n/chart tehran\n/all\n/setcity madrid\n/settime 08:00\n/lang fa | /lang es | /lang ar\n/mysettings',
+    help: 'دستورها:\n/menu\n/weather madrid\n/chart tehran\n/all\n/setcity madrid\n/settime 08:00\n/lang fa | /lang es | /lang ar\n/mysettings\n/news\n/rates',
     userAdded: '✅ کاربر اضافه شد.', userRemoved: '✅ کاربر حذف/غیرفعال شد.', notAdmin: '⛔ فقط مدیر اجازه این کار را دارد.', broadcastSent: '✅ پیام همگانی ارسال شد.'
   },
   es: {
@@ -234,7 +246,7 @@ const TR = {
     settingsText: '⚙️ Tus ajustes', dailyTime: '⏰ Hora de envío', rainLimit: '🌧 Límite de lluvia', city: '🏙 Ciudad', language: '🌐 Idioma', active: '✅ Activo', inactive: '⛔ Inactivo',
     setTimeOk: '✅ Tu hora diaria cambió a', setTimeBad: '❌ Formato correcto: /settime 08:00',
     setCityOk: '✅ Tu ciudad predeterminada cambió a', setLangOk: '✅ Tu idioma cambió a español',
-    help: 'Comandos:\n/menu\n/weather madrid\n/chart tehran\n/all\n/setcity madrid\n/settime 08:00\n/lang fa | /lang es | /lang ar\n/mysettings',
+    help: 'Comandos:\n/menu\n/weather madrid\n/chart tehran\n/all\n/setcity madrid\n/settime 08:00\n/lang fa | /lang es | /lang ar\n/mysettings\n/news\n/rates',
     userAdded: '✅ Usuario añadido.', userRemoved: '✅ Usuario eliminado/desactivado.', notAdmin: '⛔ Solo el administrador puede hacerlo.', broadcastSent: '✅ Mensaje enviado a todos los usuarios.'
   },
   ar: {
@@ -245,7 +257,7 @@ const TR = {
     settingsText: '⚙️ إعداداتك', dailyTime: '⏰ وقت الإرسال', rainLimit: '🌧 حد المطر', city: '🏙 المدينة', language: '🌐 اللغة', active: '✅ نشط', inactive: '⛔ غير نشط',
     setTimeOk: '✅ تم تغيير وقت الإرسال اليومي إلى', setTimeBad: '❌ الصيغة الصحيحة: /settime 08:00',
     setCityOk: '✅ تم تغيير مدينتك الافتراضية إلى', setLangOk: '✅ تم تغيير اللغة إلى العربية',
-    help: 'الأوامر:\n/menu\n/weather madrid\n/chart tehran\n/all\n/setcity madrid\n/settime 08:00\n/lang fa | /lang es | /lang ar\n/mysettings',
+    help: 'الأوامر:\n/menu\n/weather madrid\n/chart tehran\n/all\n/setcity madrid\n/settime 08:00\n/lang fa | /lang es | /lang ar\n/mysettings\n/news\n/rates',
     userAdded: '✅ تمت إضافة المستخدم.', userRemoved: '✅ تم حذف/تعطيل المستخدم.', notAdmin: '⛔ هذا الأمر للمدير فقط.', broadcastSent: '✅ تم إرسال الرسالة الجماعية.'
   }
 };
@@ -497,6 +509,125 @@ async function sendMessage(chatId, text, extra = {}, botKey = null) {
   const token = getBotToken(key);
   return axios.post(`https://api.telegram.org/bot${token}/sendMessage`, { chat_id: chatId, text, parse_mode: 'HTML', ...extra }, { timeout: 15000 });
 }
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function decodeXml(value) {
+  return String(value || '')
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/&#39;/g, "'").replace(/&apos;/g, "'").replace(/&quot;/g, '"')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+}
+function stripTags(value) { return decodeXml(String(value || '').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim(); }
+function rssField(block, tag) {
+  const m = String(block || '').match(new RegExp('<' + tag + '(?:\\s[^>]*)?>([\\s\\S]*?)<\\/' + tag + '>', 'i'));
+  return m ? stripTags(m[1]) : '';
+}
+function parseRssItems(xml, defaultSource = '') {
+  const blocks = String(xml || '').match(/<item\b[\s\S]*?<\/item>/gi) || [];
+  return blocks.map(block => ({
+    title: rssField(block, 'title'),
+    link: rssField(block, 'link'),
+    pubDate: rssField(block, 'pubDate'),
+    source: rssField(block, 'source') || defaultSource
+  })).filter(x => x.title && x.link);
+}
+async function fetchPersianWorldNews() {
+  const feeds = [
+    { url: NEWS_RSS_URL, source: 'Google News' },
+    { url: 'https://feeds.bbci.co.uk/persian/rss.xml', source: 'BBC فارسی' }
+  ];
+  let lastError = null;
+  for (const feed of feeds) {
+    try {
+      const r = await axios.get(feed.url, { timeout: 20000, responseType: 'text', headers: { 'User-Agent': 'Mozilla/5.0 JavidDownloaderBot/1.0' } });
+      const items = parseRssItems(r.data, feed.source);
+      if (items.length) return items;
+    } catch (err) { lastError = err; }
+  }
+  throw lastError || new Error('No Persian news feed available');
+}
+async function sendHourlyNews(chatId = DEFAULT_CHAT_ID, botKey = DEFAULT_BOT_KEY, force = false) {
+  if (!chatId) throw new Error('TELEGRAM_CHAT_ID is missing');
+  const items = await fetchPersianWorldNews();
+  const now = Date.now();
+  const cutoff = now - NEWS_MAX_AGE_MINUTES * 60 * 1000;
+  const already = new Set(sentDaily.__newsLinks || []);
+  let candidates = items.filter(item => {
+    const ts = Date.parse(item.pubDate || '');
+    const recent = !Number.isFinite(ts) || ts >= cutoff;
+    return recent && (force || !already.has(item.link));
+  });
+  if (force && !candidates.length) candidates = items;
+  const selected = candidates.slice(0, NEWS_MAX_ITEMS);
+  if (!selected.length) {
+    logEvent('news', 'No new important world news to send', { chatId: String(chatId) });
+    return { ok: true, sent: 0 };
+  }
+
+  const stamp = new Intl.DateTimeFormat('fa-IR', {
+    timeZone: TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false
+  }).format(new Date());
+
+  const body = selected.map((item, i) => {
+    const source = item.source ? `\n📰 ${escapeHtml(item.source)}` : '';
+    return `${i + 1}) <b>${escapeHtml(item.title)}</b>${source}\n<a href="${escapeHtml(item.link)}">مشاهده خبر</a>`;
+  }).join('\n\n');
+
+  await sendMessage(chatId, `🌍 <b>اخبار مهم جهان</b>\n🕐 ${escapeHtml(stamp)}\n\n${body}\n\n🔎 تیترها از فیدهای خبری جمع‌آوری شده‌اند؛ برای جزئیات، منبع اصلی را باز کنید.`, { disable_web_page_preview: true }, botKey);
+
+  if (!force) {
+    sentDaily.__newsLinks = [...selected.map(x => x.link), ...(sentDaily.__newsLinks || [])].filter((v, i, a) => a.indexOf(v) === i).slice(0, 300);
+    saveSentDaily();
+  }
+  logEvent('news', 'Hourly world news sent', { chatId: String(chatId), count: selected.length });
+  return { ok: true, sent: selected.length };
+}
+const FX_NAMES_FA = {
+  USD: 'دلار آمریکا', EUR: 'یورو', GBP: 'پوند بریتانیا', AED: 'درهم امارات', TRY: 'لیر ترکیه',
+  CAD: 'دلار کانادا', CHF: 'فرانک سوئیس', JPY: 'ین ژاپن', CNY: 'یوان چین', AUD: 'دلار استرالیا'
+};
+async function fetchFxAgainstIrr() {
+  const r = await axios.get(FX_API_URL, { timeout: 20000 });
+  const data = r.data || {};
+  if (data.result && data.result !== 'success') throw new Error('FX provider returned: ' + data.result);
+  const rates = data.rates || {};
+  const irr = Number(rates.IRR);
+  if (!Number.isFinite(irr) || irr <= 0) throw new Error('IRR rate is unavailable');
+  const rows = FX_CURRENCIES.map(code => {
+    const rate = code === 'USD' ? 1 : Number(rates[code]);
+    if (!Number.isFinite(rate) || rate <= 0) return null;
+    return { code, irrPerUnit: irr / rate };
+  }).filter(Boolean);
+  return { rows, updatedUtc: data.time_last_update_utc || '', provider: data.provider || 'ExchangeRate-API' };
+}
+function faNumber(value) {
+  return new Intl.NumberFormat('fa-IR', { maximumFractionDigits: 0 }).format(Math.round(Number(value) || 0));
+}
+async function sendFxReport(chatId = DEFAULT_CHAT_ID, botKey = DEFAULT_BOT_KEY) {
+  if (!chatId) throw new Error('TELEGRAM_CHAT_ID is missing');
+  const data = await fetchFxAgainstIrr();
+  const lines = data.rows.map(row => `💱 ۱ ${FX_NAMES_FA[row.code] || row.code} (${row.code}) = <b>${faNumber(row.irrPerUnit)}</b> ریال`);
+  const updateText = data.updatedUtc ? new Intl.DateTimeFormat('fa-IR', {
+    timeZone: TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false
+  }).format(new Date(data.updatedUtc)) : 'نامشخص';
+  const text = `💰 <b>نرخ ارز در برابر ریال ایران</b>\n📅 آخرین بروزرسانی منبع: ${escapeHtml(updateText)}\n\n${lines.join('\n')}\n\nℹ️ این ارقام نرخ مرجع بین‌المللی هستند و ممکن است با نرخ رسمی بانکی یا بازار آزاد ایران تفاوت داشته باشند.\nمنبع: ${escapeHtml(data.provider)}`;
+  await sendMessage(chatId, text, { disable_web_page_preview: true }, botKey);
+  logEvent('fx', 'FX report sent', { chatId: String(chatId), currencies: data.rows.map(x => x.code) });
+  return { ok: true, sent: data.rows.length };
+}
+async function sendMorningFxIfDue(force = false) {
+  if (!FX_ENABLED || !DEFAULT_CHAT_ID) return { ok: true, skipped: true };
+  const nowTime = new Intl.DateTimeFormat('en-GB', { timeZone: TIMEZONE, hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
+  const today = todayDateString();
+  if (!force && (nowTime !== FX_REPORT_TIME || sentDaily.__fxDate === today)) return { ok: true, skipped: true, nowTime };
+  await sendFxReport(DEFAULT_CHAT_ID, DEFAULT_BOT_KEY);
+  sentDaily.__fxDate = today;
+  saveSentDaily();
+  return { ok: true, sent: true, nowTime };
+}
 async function answerCallback(callbackId, botKey = DEFAULT_BOT_KEY) {
   if (!callbackId) return;
   try { await axios.post(`https://api.telegram.org/bot${getBotToken(botKey)}/answerCallbackQuery`, { callback_query_id: callbackId }, { timeout: 5000 }); } catch (_) {}
@@ -515,6 +646,7 @@ async function sendMainMenu(chatId, botKey = DEFAULT_BOT_KEY) {
       [{ text: '📊 Chart Nouakchott', callback_data: 'chart:nouakchott' }, { text: '📊 Chart Bordeaux', callback_data: 'chart:bordeaux' }],
       [{ text: tr(lang, 'liveMap'), url: mapUrl }],
       [{ text: tr(lang, 'alertStatus'), callback_data: 'alerts:status' }, { text: tr(lang, 'settings'), callback_data: 'settings:show' }],
+      [{ text: '🌍 اخبار مهم جهان', callback_data: 'news:now' }, { text: '💱 نرخ ارز', callback_data: 'fx:now' }],
       [{ text: '🇪🇸 Español', callback_data: 'lang:es' }, { text: '🇸🇦 العربية', callback_data: 'lang:ar' }, { text: '🇮🇷 فارسی', callback_data: 'lang:fa' }],
       [{ text: tr(lang, 'adminPanel'), url: PUBLIC_URL || 'https://render.com' }]
     ] }
@@ -636,9 +768,13 @@ async function checkRealTimeAlerts() {
 
 let scheduledDailyTask = null;
 let scheduledAlertTask = null;
+let scheduledNewsTask = null;
+let scheduledFxTask = null;
 function scheduleJobs() {
   if (scheduledDailyTask) scheduledDailyTask.stop();
   if (scheduledAlertTask) scheduledAlertTask.stop();
+  if (scheduledNewsTask) scheduledNewsTask.stop();
+  if (scheduledFxTask) scheduledFxTask.stop();
   if (process.env.ENABLE_INTERNAL_CRON === 'false') return;
   if (settings.dailyReport) {
     scheduledDailyTask = cron.schedule('* * * * *', () => sendDailyReportsToDueUsers().catch(err => console.error('Daily users job error:', err.message)), { timezone: TIMEZONE });
@@ -647,6 +783,14 @@ function scheduleJobs() {
   if (settings.realTimeAlerts) {
     scheduledAlertTask = cron.schedule('*/30 * * * *', () => checkRealTimeAlerts().catch(err => console.error('Alert job error:', err.message)), { timezone: TIMEZONE });
     console.log('Real-time alerts scheduled every 30 minutes');
+  }
+  if (NEWS_ENABLED && DEFAULT_CHAT_ID) {
+    scheduledNewsTask = cron.schedule('0 * * * *', () => sendHourlyNews(DEFAULT_CHAT_ID, DEFAULT_BOT_KEY, false).catch(err => console.error('Hourly news job error:', err.message)), { timezone: TIMEZONE });
+    console.log(`Persian world news scheduled hourly (${TIMEZONE})`);
+  }
+  if (FX_ENABLED && DEFAULT_CHAT_ID) {
+    scheduledFxTask = cron.schedule('* * * * *', () => sendMorningFxIfDue(false).catch(err => console.error('FX report job error:', err.message)), { timezone: TIMEZONE });
+    console.log(`FX report checker scheduled every minute; send time ${FX_REPORT_TIME} (${TIMEZONE})`);
   }
 }
 function adminAuth(req, res, next) {
@@ -805,6 +949,8 @@ app.post(['/webhook', '/webhook/:botKey'], async (req, res) => {
       if (action === 'chart') return cities[cityKey] ? sendChartToTelegram(chatId, cityKey, 'manual', botKey) : sendMessage(chatId, tr(lang, 'cityNotFound'));
       if (action === 'alerts') return sendMessage(chatId, `⚠️ Real-Time Alerts: ${settings.realTimeAlerts ? 'ON' : 'OFF'}\n${tr(lang,'dailyTime')}: ${user.sendTime || settings.sendTime}\n${tr(lang,'rainLimit')}: ${user.rainThreshold || settings.rainThreshold}%`);
       if (action === 'settings') return sendMessage(chatId, userSettingsText(chatId, botKey));
+      if (action === 'news') return sendHourlyNews(chatId, botKey, true);
+      if (action === 'fx') return sendFxReport(chatId, botKey);
       if (action === 'lang') {
         const selected = normalizeLanguage(parts[1]);
         saveUserObject({ ...getUser(chatId, botKey), language: selected });
@@ -837,6 +983,8 @@ app.post(['/webhook', '/webhook/:botKey'], async (req, res) => {
       return cities[key] ? sendChartToTelegram(chatId, key, 'manual', botKey) : sendMessage(chatId, tr(lang, 'cityNotFound') + ' /chart tehran');
     }
     if (lower === '/all') return sendAllDailyReport(chatId, 'manual', botKey);
+    if (lower === '/news') return sendHourlyNews(chatId, botKey, true);
+    if (lower === '/rates' || lower === '/fx') return sendFxReport(chatId, botKey);
 
     if (lower.startsWith('/settime')) {
       const newTime = parseCommandArg(text);
