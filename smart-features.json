@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "manifest_version": "2026.09.21.1",
+  "auto_apply": true,
+  "title": "Downloaderjavid Smart Features",
+  "description": "Data-driven features which can be activated without executing arbitrary remote code.",
+  "feature_flags": {
+    "world_news": true,
+    "fx_market": true,
+    "smart_update": true,
+    "offline_navigation": true,
+    "trusted_music": true,
+    "javid_ai": true
+  },
+  "commands": [
+    {
+      "command": "/features",
+      "aliases": ["/capabilities"],
+      "enabled": true,
+      "action": "status",
+      "label": "Smart feature status"
+    },
+    {
+      "command": "/app",
+      "enabled": true,
+      "action": "text",
+      "reply": {
+        "fa": "📱 JavidDownloader Pro\nبرای قابلیت‌های اپ، مسیریابی آفلاین، موسیقی، اخبار، بازار و Javid AI از نسخه جدید استفاده کنید.",
+        "es": "📱 JavidDownloader Pro\nUsa la versión más reciente para navegación offline, música, noticias, mercado y Javid AI.",
+        "ar": "📱 JavidDownloader Pro\nاستخدم أحدث إصدار للملاحة دون اتصال والموسيقى والأخبار والسوق وJavid AI."
+      }
+    }
+  ],
+  "allowed_actions": ["text", "url", "news", "fx", "menu", "status"]
+}
