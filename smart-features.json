@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "manifest_version": "2026.09.21.2",
+  "manifest_version": "2026.09.21.3",
   "auto_apply": true,
   "title": "JavidDownloader Standalone Smart Features",
   "description": "Direct GitHub feature manifest for the Android app. No Render required.",
@@ -14,7 +14,10 @@
     "standalone_app": true,
     "render_free": true,
     "auto_evolve": true,
-    "github_direct_update": true
+    "github_direct_update": true,
+    "persian_news_summary": true,
+    "persian_news_extract": true,
+    "news_send_summary_fa": true
   },
   "commands": [
     {
