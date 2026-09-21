@@ -1,19 +1,20 @@
 {
   "schema": 1,
-  "latest_version": "4.1.0",
-  "latest_version_code": 4100,
-  "minimum_supported_version": "4.0.0",
+  "latest_version": "4.1.1",
+  "latest_version_code": 4110,
+  "minimum_supported_version": "4.1.0",
   "mandatory": false,
-  "title": "JavidDownloader Pro v4.1.0",
+  "title": "JavidDownloader Pro v4.1.1 Standalone Auto-Evolve",
   "changelog": [
-    "Smart Update Center",
-    "Safe bot feature expansion from a controlled manifest",
-    "Automatic feature sync and health check",
-    "Update manifest with SHA-256 and expected signing certificate",
+    "Standalone Smart Update: no Render dependency",
+    "Direct GitHub update and feature manifests",
+    "Auto-Evolve safe capability sync on app start and periodically",
+    "Render required = false in app status",
+    "Remote arbitrary code execution remains disabled",
     "Offline Navigation, News, Market, Javid AI and trusted Music preserved"
   ],
   "download_url": "",
   "release_page": "https://github.com/saeid1979/weather-render-bot/releases",
-  "sha256": "189a9dd0053ccaa23255b03a4377420bbfd84d849b35c16a3957c0a980c84091",
+  "sha256": "69d715559bc074408faa2dbf15608272ddc31aa1eebe7341361b6c6a950cc020",
   "signature_cert_sha256": "8a1273c29cee908f79119caddd6ab2d57f0c329561379d686ad6a83765dd9643"
 }
