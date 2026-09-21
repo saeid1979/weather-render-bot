@@ -1,20 +1,20 @@
 {
   "schema": 1,
-  "latest_version": "4.1.1",
-  "latest_version_code": 4110,
+  "latest_version": "4.1.2",
+  "latest_version_code": 4120,
   "minimum_supported_version": "4.1.0",
   "mandatory": false,
-  "title": "JavidDownloader Pro v4.1.1 Standalone Auto-Evolve",
+  "title": "JavidDownloader Pro v4.1.2 Persian News Summary",
   "changelog": [
-    "Standalone Smart Update: no Render dependency",
-    "Direct GitHub update and feature manifests",
-    "Auto-Evolve safe capability sync on app start and periodically",
-    "Render required = false in app status",
-    "Remote arbitrary code execution remains disabled",
-    "Offline Navigation, News, Market, Javid AI and trusted Music preserved"
+    "Persian news extraction and Persian summaries",
+    "Persian summary included when sending news to Downloaderjavid",
+    "Duplicate/publisher boilerplate cleanup",
+    "Public article metadata/paragraph fallback when RSS description is too short",
+    "Javid AI uses Persian news summaries",
+    "Standalone GitHub direct update and Auto-Evolve preserved"
   ],
   "download_url": "",
   "release_page": "https://github.com/saeid1979/weather-render-bot/releases",
-  "sha256": "69d715559bc074408faa2dbf15608272ddc31aa1eebe7341361b6c6a950cc020",
+  "sha256": "002391c9277e362fe57be5590bc77f8ec2f00cfa1d91150bc692d801b055088d",
   "signature_cert_sha256": "8a1273c29cee908f79119caddd6ab2d57f0c329561379d686ad6a83765dd9643"
 }
