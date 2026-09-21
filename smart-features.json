@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "manifest_version": "2026.09.21.3",
+  "manifest_version": "2026.09.22.1",
   "auto_apply": true,
   "title": "JavidDownloader Standalone Smart Features",
   "description": "Direct GitHub feature manifest for the Android app. No Render required.",
@@ -17,7 +17,20 @@
     "github_direct_update": true,
     "persian_news_summary": true,
     "persian_news_extract": true,
-    "news_send_summary_fa": true
+    "news_send_summary_fa": true,
+    "smart_intent_router": true,
+    "smart_weather": true,
+    "smart_news": true,
+    "smart_fx": true,
+    "smart_profile": true,
+    "smart_health": true,
+    "smart_help": true,
+    "duplicate_news_filter": true,
+    "personalized_user_settings": true,
+    "natural_language_commands": true,
+    "multilingual_smart_router": true,
+    "smart_error_logging": true,
+    "safe_feature_expansion": true
   },
   "commands": [
     {
@@ -30,13 +43,29 @@
       "label": "Smart feature status"
     },
     {
+      "command": "/smart",
+      "aliases": [
+        "/ai",
+        "/assistant"
+      ],
+      "enabled": true,
+      "action": "text",
+      "label": "Smart assistant",
+      "reply": {
+        "fa": "🧠 دستیار هوشمند فعال است. طبیعی بنویس: «آخرین اخبار»، «نرخ دلار»، «هوا در مادرید»، «تنظیمات من» یا «وضعیت بات».",
+        "es": "🧠 Asistente inteligente activo. Escribe de forma natural: noticias, tipo de cambio, tiempo en Madrid, configuración o estado del bot.",
+        "ar": "🧠 المساعد الذكي فعال. اكتب بشكل طبيعي: الأخبار، أسعار العملات، الطقس في مدريد، الإعدادات أو حالة البوت."
+      }
+    },
+    {
       "command": "/app",
       "enabled": true,
       "action": "text",
+      "label": "JavidDownloader",
       "reply": {
-        "fa": "📱 JavidDownloader Pro\nبرای قابلیت‌های اپ، مسیریابی آفلاین، موسیقی، اخبار، بازار و Javid AI از نسخه جدید استفاده کنید.",
-        "es": "📱 JavidDownloader Pro\nUsa la versión más reciente para navegación offline, música, noticias, mercado y Javid AI.",
-        "ar": "📱 JavidDownloader Pro\nاستخدم أحدث إصدار للملاحة دون اتصال والموسيقى والأخبار والسوق وJavid AI."
+        "fa": "📱 JavidDownloader Pro\\nموسیقی معتبر، اخبار فارسی، بازار، Javid AI و مسیریابی آفلاین.",
+        "es": "📱 JavidDownloader Pro\\nMúsica, noticias, mercado, Javid AI y navegación offline.",
+        "ar": "📱 JavidDownloader Pro\\nالموسيقى والأخبار والسوق وJavid AI والملاحة دون اتصال."
       }
     }
   ],
