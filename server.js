@@ -357,6 +357,52 @@ function smartFeatureStatusText(lang = 'fa') {
   ].join('\\n');
 }
 
+
+// ===== Smart Intent Router =====
+// Handles natural-language requests without requiring exact slash commands.
+// It only routes to existing safe bot capabilities; it does not execute remote code.
+function smartIntent(text, user, lang='fa') {
+  const raw=String(text || '').trim();
+  const lower=raw.toLowerCase();
+  const has=(...terms)=>terms.some(t=>lower.includes(t));
+  if (!raw) return null;
+  if (has('قابلیت ها','قابلیت‌های','امکانات','چه کارهایی','دستورات','help','راهنما')) return {type:'help'};
+  if (has('خبر','اخبار','خبر فوری','آخرین خبر','جهان','فناوری','اقتصاد','ورزش','علم','سلامت')) return {type:'news'};
+  if (has('نرخ ارز','ارز','دلار','یورو','پوند','درهم','لیر','طلا','سکه','بیت کوین','کریپتو','تومان','ریال')) return {type:'fx'};
+  if (has('هوا','آب و هوا','آب‌وهوا','باران','دما','باد','رطوبت','forecast','weather')) {
+    const cityArg = normalizeCityKey(raw
+      .replace(/آب[\s‌-]*و[\s‌-]*هوا|آب[\s‌-]*وهوا|هواشناسی|هوا|weather|forecast/gi,' ')
+      .replace(/امروز|فردا|الان|چنده|چطور|برای|در|وضعیت/g,' ')
+      .trim()) || user?.city || 'madrid';
+    return {type:'weather', city: cities[cityArg] ? cityArg : (user?.city || 'madrid')};
+  }
+  if (has('من کی هستم','تنظیمات من','وضعیت من','پروفایل من')) return {type:'profile'};
+  if (has('وضعیت بات','بات وصل','اتصال بات','سلامت بات','bot status','health')) return {type:'status'};
+  return null;
+}
+
+function smartHelpText(lang='fa') {
+  if (lang==='es') return '🧠 Asistente inteligente\\nPuedes escribir normalmente: «noticias», «tipo de cambio», «tiempo en Madrid», «mi configuración» o «estado del bot».';
+  if (lang==='ar') return '🧠 المساعد الذكي\\nيمكنك الكتابة بشكل طبيعي: الأخبار، أسعار العملات، الطقس في مدريد، إعداداتي، أو حالة البوت.';
+  return '🧠 دستیار هوشمند\\nکافی است طبیعی بنویسی:\\n📰 «آخرین اخبار جهان»\\n💱 «نرخ دلار و یورو»\\n🌤 «هوا در مادرید چطور است؟»\\n⚙️ «تنظیمات من»\\n🤖 «وضعیت بات»';
+}
+
+async function handleSmartIntent({text, chatId, botKey, lang, user}) {
+  const intent=smartIntent(text,user,lang);
+  if (!intent) return false;
+  if (intent.type==='help') { await sendMessage(chatId, smartHelpText(lang), {}, botKey); return true; }
+  if (intent.type==='news') { await sendHourlyNews(chatId, botKey, true); return true; }
+  if (intent.type==='fx') { await sendFxReport(chatId, botKey); return true; }
+  if (intent.type==='weather') { await sendWeatherToTelegram(chatId, intent.city, 'smart', botKey); return true; }
+  if (intent.type==='profile') { await sendMessage(chatId, userSettingsText(chatId, botKey), {}, botKey); return true; }
+  if (intent.type==='status') {
+    const m=smartFeatureState.manifest || {};
+    await sendMessage(chatId, smartFeatureStatusText(lang), {}, botKey);
+    return true;
+  }
+  return false;
+}
+
 async function maybeHandleSmartCommand({ lower, chatId, botKey, lang }) {
   if (!SMART_FEATURES_ENABLED || smartFeatureState.manifest?.auto_apply === false) return false;
   const commandToken = String(lower || '').split(/\s+/)[0];
@@ -1154,6 +1200,7 @@ app.post(['/webhook', '/webhook/:botKey'], async (req, res) => {
     logEvent('message', `Telegram command: ${text}`, { chatId });
 
     if (await maybeHandleSmartCommand({ lower, chatId, botKey, lang })) return;
+    if (await handleSmartIntent({ text, chatId, botKey, lang, user })) return;
 
     if (lower === '/start' || lower === '/menu') return sendMainMenu(chatId, botKey);
     if (lower === '/help') return sendMessage(chatId, tr(lang, 'help'));
