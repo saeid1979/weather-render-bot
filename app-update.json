@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "latest_version": "4.1.0",
+  "latest_version_code": 4100,
+  "minimum_supported_version": "4.0.0",
+  "mandatory": false,
+  "title": "JavidDownloader Pro v4.1.0",
+  "changelog": [
+    "Smart Update Center",
+    "Safe bot feature expansion from a controlled manifest",
+    "Automatic feature sync and health check",
+    "Rollback metadata and signed-update verification support"
+  ],
+  "download_url": "",
+  "release_page": "https://github.com/saeid1979/weather-render-bot/releases",
+  "sha256": "",
+  "signature_cert_sha256": "8a1273c29cee908f79119caddd6ab2d57f0c329561379d686ad6a83765dd9643"
+}
