@@ -1,21 +1,27 @@
 {
   "schema": 1,
-  "manifest_version": "2026.09.21.1",
+  "manifest_version": "2026.09.21.2",
   "auto_apply": true,
-  "title": "Downloaderjavid Smart Features",
-  "description": "Data-driven features which can be activated without executing arbitrary remote code.",
+  "title": "JavidDownloader Standalone Smart Features",
+  "description": "Direct GitHub feature manifest for the Android app. No Render required.",
   "feature_flags": {
     "world_news": true,
     "fx_market": true,
     "smart_update": true,
     "offline_navigation": true,
     "trusted_music": true,
-    "javid_ai": true
+    "javid_ai": true,
+    "standalone_app": true,
+    "render_free": true,
+    "auto_evolve": true,
+    "github_direct_update": true
   },
   "commands": [
     {
       "command": "/features",
-      "aliases": ["/capabilities"],
+      "aliases": [
+        "/capabilities"
+      ],
       "enabled": true,
       "action": "status",
       "label": "Smart feature status"
@@ -31,5 +37,12 @@
       }
     }
   ],
-  "allowed_actions": ["text", "url", "news", "fx", "menu", "status"]
+  "allowed_actions": [
+    "text",
+    "url",
+    "news",
+    "fx",
+    "menu",
+    "status"
+  ]
 }
