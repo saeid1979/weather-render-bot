@@ -333,27 +333,27 @@ function smartFeatureStatusText(lang = 'fa') {
   const flags = Object.entries(m.feature_flags || {}).filter(([,v]) => v).map(([k]) => k);
   if (lang === 'es') return [
     '🧠 Funciones inteligentes activas',
-    \`Manifest: \${m.manifest_version || '—'}\`,
-    \`Comandos dinámicos: \${enabled.length}\`,
+    `Manifest: ${m.manifest_version || '—'}`,
+    `Comandos dinámicos: ${enabled.length}`,
     enabled.map(x => x.command).join(' • ') || '—',
-    \`Funciones: \${flags.join(', ') || '—'}\`,
-    \`Última sincronización: \${smartFeatureState.lastSync || '—'}\`
+    `Funciones: ${flags.join(', ') || '—'}`,
+    `Última sincronización: ${smartFeatureState.lastSync || '—'}`
   ].join('\\n');
   if (lang === 'ar') return [
     '🧠 الميزات الذكية النشطة',
-    \`Manifest: \${m.manifest_version || '—'}\`,
-    \`الأوامر الديناميكية: \${enabled.length}\`,
+    `Manifest: ${m.manifest_version || '—'}`,
+    `الأوامر الديناميكية: ${enabled.length}`,
     enabled.map(x => x.command).join(' • ') || '—',
-    \`الميزات: \${flags.join(', ') || '—'}\`,
-    \`آخر مزامنة: \${smartFeatureState.lastSync || '—'}\`
+    `الميزات: ${flags.join(', ') || '—'}`,
+    `آخر مزامنة: ${smartFeatureState.lastSync || '—'}`
   ].join('\\n');
   return [
     '🧠 قابلیت‌های هوشمند فعال',
-    \`Manifest: \${m.manifest_version || '—'}\`,
-    \`فرمان‌های پویا: \${enabled.length}\`,
+    `Manifest: ${m.manifest_version || '—'}`,
+    `فرمان‌های پویا: ${enabled.length}`,
     enabled.map(x => x.command).join(' • ') || '—',
-    \`Feature Flags: \${flags.join(', ') || '—'}\`,
-    \`آخرین همگام‌سازی: \${smartFeatureState.lastSync || '—'}\`
+    `Feature Flags: ${flags.join(', ') || '—'}`,
+    `آخرین همگام‌سازی: ${smartFeatureState.lastSync || '—'}`
   ].join('\\n');
 }
 
@@ -375,7 +375,7 @@ async function maybeHandleSmartCommand({ lower, chatId, botKey, lang }) {
   }
   if (row.action === 'url') {
     const body = row.reply?.[lang] || row.reply?.fa || row.label || '🔗 Link';
-    await sendMessage(chatId, row.url ? \`\${body}\\n\${row.url}\` : body, {}, botKey);
+    await sendMessage(chatId, row.url ? `${body}\\n${row.url}` : body, {}, botKey);
     return true;
   }
   if (row.action === 'news') { await sendHourlyNews(chatId, botKey, true); return true; }
