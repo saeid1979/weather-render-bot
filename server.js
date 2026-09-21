@@ -226,6 +226,190 @@ function userThreshold(chatId) {
 
 
 
+
+// ===== Safe Smart Feature Expansion =====
+// The bot can expand data-driven capabilities from a controlled manifest.
+// Remote JavaScript/code execution is intentionally NOT supported.
+const SMART_FEATURES_ENABLED = process.env.SMART_FEATURES_ENABLED !== 'false';
+const SMART_FEATURES_URL = process.env.SMART_FEATURES_URL || 'https://raw.githubusercontent.com/saeid1979/weather-render-bot/main/smart-features.json';
+const SMART_FEATURES_INTERVAL_MINUTES = Math.max(2, Number(process.env.SMART_FEATURES_INTERVAL_MINUTES || 10));
+const APP_UPDATE_MANIFEST_URL = process.env.APP_UPDATE_MANIFEST_URL || 'https://raw.githubusercontent.com/saeid1979/weather-render-bot/main/app-update.json';
+const SMART_ALLOWED_ACTIONS = new Set(['text', 'url', 'news', 'fx', 'menu', 'status']);
+
+let smartFeatureState = {
+  manifest: {
+    schema: 1,
+    manifest_version: 'fallback',
+    auto_apply: true,
+    feature_flags: {},
+    commands: [{ command: '/features', aliases: [], enabled: true, action: 'status', label: 'Smart feature status' }]
+  },
+  lastSync: null,
+  lastError: '',
+  source: 'fallback'
+};
+
+function sanitizeSmartManifest(raw) {
+  if (!raw || Number(raw.schema) !== 1) throw new Error('Unsupported smart feature manifest schema');
+  const commands = [];
+  for (const row of (Array.isArray(raw.commands) ? raw.commands.slice(0, 64) : [])) {
+    const command = String(row?.command || '').trim().toLowerCase();
+    if (!/^\/[a-z0-9_]{1,32}$/i.test(command)) continue;
+    const action = String(row?.action || 'text').trim().toLowerCase();
+    if (!SMART_ALLOWED_ACTIONS.has(action)) continue;
+    const aliases = (Array.isArray(row?.aliases) ? row.aliases : [])
+      .map(x => String(x || '').trim().toLowerCase())
+      .filter(x => /^\/[a-z0-9_]{1,32}$/i.test(x))
+      .slice(0, 12);
+    const reply = {};
+    for (const lang of ['fa','es','ar','en']) {
+      const value = row?.reply?.[lang];
+      if (typeof value === 'string' && value.length <= 4000) reply[lang] = value;
+    }
+    let url = '';
+    if (typeof row?.url === 'string') {
+      try {
+        const u = new URL(row.url);
+        if (u.protocol === 'https:') url = u.toString();
+      } catch (_) {}
+    }
+    commands.push({
+      command,
+      aliases,
+      enabled: row?.enabled !== false,
+      action,
+      label: String(row?.label || command).slice(0, 120),
+      reply,
+      url
+    });
+  }
+  const feature_flags = {};
+  for (const [key, value] of Object.entries(raw.feature_flags || {})) {
+    if (/^[a-z0-9_-]{1,64}$/i.test(key) && typeof value === 'boolean') feature_flags[key] = value;
+  }
+  return {
+    schema: 1,
+    manifest_version: String(raw.manifest_version || '').slice(0, 80),
+    auto_apply: raw.auto_apply !== false,
+    title: String(raw.title || 'Downloaderjavid Smart Features').slice(0, 160),
+    description: String(raw.description || '').slice(0, 500),
+    feature_flags,
+    commands
+  };
+}
+
+async function syncSmartFeatures(force = false) {
+  if (!SMART_FEATURES_ENABLED) return { ok: false, disabled: true, ...smartFeatureState };
+  try {
+    const response = await axios.get(SMART_FEATURES_URL, {
+      timeout: 12000,
+      headers: { 'User-Agent': 'Downloaderjavid-SmartFeatures/1.0' },
+      validateStatus: x => x >= 200 && x < 300
+    });
+    const manifest = sanitizeSmartManifest(response.data);
+    smartFeatureState = {
+      manifest,
+      lastSync: new Date().toISOString(),
+      lastError: '',
+      source: SMART_FEATURES_URL
+    };
+    logEvent('smart_features', 'Smart feature manifest synchronized', {
+      manifestVersion: manifest.manifest_version,
+      commands: manifest.commands.length,
+      flags: Object.keys(manifest.feature_flags).length,
+      force: !!force
+    });
+    return { ok: true, ...smartFeatureState };
+  } catch (err) {
+    smartFeatureState.lastError = err.message;
+    logEvent('smart_features_error', 'Smart feature sync failed', { error: err.message });
+    return { ok: false, ...smartFeatureState };
+  }
+}
+
+function smartFeatureStatusText(lang = 'fa') {
+  const m = smartFeatureState.manifest || {};
+  const enabled = (m.commands || []).filter(x => x.enabled !== false);
+  const flags = Object.entries(m.feature_flags || {}).filter(([,v]) => v).map(([k]) => k);
+  if (lang === 'es') return [
+    '🧠 Funciones inteligentes activas',
+    \`Manifest: \${m.manifest_version || '—'}\`,
+    \`Comandos dinámicos: \${enabled.length}\`,
+    enabled.map(x => x.command).join(' • ') || '—',
+    \`Funciones: \${flags.join(', ') || '—'}\`,
+    \`Última sincronización: \${smartFeatureState.lastSync || '—'}\`
+  ].join('\\n');
+  if (lang === 'ar') return [
+    '🧠 الميزات الذكية النشطة',
+    \`Manifest: \${m.manifest_version || '—'}\`,
+    \`الأوامر الديناميكية: \${enabled.length}\`,
+    enabled.map(x => x.command).join(' • ') || '—',
+    \`الميزات: \${flags.join(', ') || '—'}\`,
+    \`آخر مزامنة: \${smartFeatureState.lastSync || '—'}\`
+  ].join('\\n');
+  return [
+    '🧠 قابلیت‌های هوشمند فعال',
+    \`Manifest: \${m.manifest_version || '—'}\`,
+    \`فرمان‌های پویا: \${enabled.length}\`,
+    enabled.map(x => x.command).join(' • ') || '—',
+    \`Feature Flags: \${flags.join(', ') || '—'}\`,
+    \`آخرین همگام‌سازی: \${smartFeatureState.lastSync || '—'}\`
+  ].join('\\n');
+}
+
+async function maybeHandleSmartCommand({ lower, chatId, botKey, lang }) {
+  if (!SMART_FEATURES_ENABLED || smartFeatureState.manifest?.auto_apply === false) return false;
+  const commandToken = String(lower || '').split(/\s+/)[0];
+  const row = (smartFeatureState.manifest?.commands || []).find(x =>
+    x.enabled !== false && (x.command === commandToken || (x.aliases || []).includes(commandToken))
+  );
+  if (!row) return false;
+  if (row.action === 'status') {
+    await sendMessage(chatId, smartFeatureStatusText(lang), {}, botKey);
+    return true;
+  }
+  if (row.action === 'text') {
+    const body = row.reply?.[lang] || row.reply?.fa || row.reply?.en || row.label || row.command;
+    await sendMessage(chatId, body, {}, botKey);
+    return true;
+  }
+  if (row.action === 'url') {
+    const body = row.reply?.[lang] || row.reply?.fa || row.label || '🔗 Link';
+    await sendMessage(chatId, row.url ? \`\${body}\\n\${row.url}\` : body, {}, botKey);
+    return true;
+  }
+  if (row.action === 'news') { await sendHourlyNews(chatId, botKey, true); return true; }
+  if (row.action === 'fx') { await sendFxReport(chatId, botKey); return true; }
+  if (row.action === 'menu') { await sendMainMenu(chatId, botKey); return true; }
+  return false;
+}
+
+async function fetchAppUpdateManifest() {
+  const response = await axios.get(APP_UPDATE_MANIFEST_URL, {
+    timeout: 12000,
+    headers: { 'User-Agent': 'JavidDownloader-UpdateCenter/1.0' },
+    validateStatus: x => x >= 200 && x < 300
+  });
+  const raw = response.data || {};
+  const url = typeof raw.download_url === 'string' ? raw.download_url.trim() : '';
+  const releasePage = typeof raw.release_page === 'string' ? raw.release_page.trim() : '';
+  const safeUrl = url && /^https:\/\//i.test(url) ? url : '';
+  const safeRelease = releasePage && /^https:\/\//i.test(releasePage) ? releasePage : '';
+  return {
+    schema: Number(raw.schema || 1),
+    latest_version: String(raw.latest_version || ''),
+    latest_version_code: Number(raw.latest_version_code || 0),
+    minimum_supported_version: String(raw.minimum_supported_version || ''),
+    mandatory: !!raw.mandatory,
+    title: String(raw.title || 'JavidDownloader Update').slice(0, 160),
+    changelog: (Array.isArray(raw.changelog) ? raw.changelog : []).map(x => String(x).slice(0, 500)).slice(0, 30),
+    download_url: safeUrl,
+    release_page: safeRelease,
+    sha256: /^[a-f0-9]{64}$/i.test(String(raw.sha256 || '')) ? String(raw.sha256).toLowerCase() : '',
+    signature_cert_sha256: /^[a-f0-9]{64}$/i.test(String(raw.signature_cert_sha256 || '')) ? String(raw.signature_cert_sha256).toLowerCase() : ''
+  };
+}
+
 const TR = {
   fa: {
     menuTitle: '🌤 منوی بات هواشناسی\nیک گزینه را انتخاب کنید:',
@@ -969,6 +1153,8 @@ app.post(['/webhook', '/webhook/:botKey'], async (req, res) => {
     const lang = normalizeLanguage(user.language);
     logEvent('message', `Telegram command: ${text}`, { chatId });
 
+    if (await maybeHandleSmartCommand({ lower, chatId, botKey, lang })) return;
+
     if (lower === '/start' || lower === '/menu') return sendMainMenu(chatId, botKey);
     if (lower === '/help') return sendMessage(chatId, tr(lang, 'help'));
     if (lower === '/language' || lower === '/lang') return sendMessage(chatId, '🌐 Language / Idioma / اللغة:', { reply_markup: { inline_keyboard: [[{ text: '🇮🇷 فارسی', callback_data: 'lang:fa' }, { text: '🇪🇸 Español', callback_data: 'lang:es' }, { text: '🇸🇦 العربية', callback_data: 'lang:ar' }]] } }, botKey);
@@ -1268,6 +1454,36 @@ app.get('/api/admin/test-user/:botKey/:chatId', adminAuth, async (req, res) => {
 app.post('/api/admin/test-alerts', adminAuth, async (req, res) => { try { await checkRealTimeAlerts(); res.json({ ok: true, message: 'Alert check executed' }); } catch (err) { res.status(500).json({ ok: false, error: err.message }); } });
 
 app.get('/map', (req, res) => res.sendFile(path.join(__dirname, 'public', 'map.html')));
+
+
+app.get('/api/smart/features', (req, res) => {
+  res.json({
+    ok: true,
+    enabled: SMART_FEATURES_ENABLED,
+    source: smartFeatureState.source,
+    lastSync: smartFeatureState.lastSync,
+    lastError: smartFeatureState.lastError,
+    manifest: smartFeatureState.manifest
+  });
+});
+app.post('/api/admin/smart-features/sync', adminAuth, async (req, res) => {
+  const result = await syncSmartFeatures(true);
+  res.status(result.ok ? 200 : 502).json(result);
+});
+app.get('/api/app/update', async (req, res) => {
+  try {
+    const manifest = await fetchAppUpdateManifest();
+    res.json({ ok: true, source: APP_UPDATE_MANIFEST_URL, manifest });
+  } catch (err) {
+    res.status(502).json({ ok: false, source: APP_UPDATE_MANIFEST_URL, error: err.message });
+  }
+});
+
+
+// Initial + periodic safe feature synchronization.
+syncSmartFeatures(true).catch(err => console.error('Initial smart feature sync error:', err.message));
+const smartFeatureTimer = setInterval(() => syncSmartFeatures(false).catch(err => console.error('Smart feature sync error:', err.message)), SMART_FEATURES_INTERVAL_MINUTES * 60 * 1000);
+if (typeof smartFeatureTimer.unref === 'function') smartFeatureTimer.unref();
 
 scheduleJobs();
 app.listen(PORT, () => console.log(`Weather Telegram Bot is running on port ${PORT}`));
