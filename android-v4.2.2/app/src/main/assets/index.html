@@ -1,1 +1,29 @@
-<!doctype html><html lang="fa" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>JavidDownloader Pro</title><style>body{font-family:sans-serif;padding:24px;background:#111;color:#fff}.card{padding:18px;margin:12px 0;border:1px solid #444;border-radius:16px}button{padding:12px;margin:5px;border-radius:12px}</style><h1>JavidDownloader Pro</h1><p>v4.2.2 · Javid AI Core</p><div class="card"><h2>Javid Assistant</h2><p>هسته جدید برای یکپارچه‌سازی دانلود، موسیقی، خبر، ارز، فوتبال و مسیریابی.</p></div><div class="card"><button>دانلود</button><button>موسیقی</button><button>اخبار</button><button>ارز</button><button>فوتبال</button><button>نقشه آفلاین</button></div></html>
+<!doctype html><html lang="fa" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><title>JavidDownloader Pro</title><style>
+*{box-sizing:border-box}body{margin:0;font-family:sans-serif;background:#0d1117;color:#f5f7fa}.top{padding:22px 18px;background:#161b22;position:sticky;top:0}.top h1{margin:0;font-size:23px}.top small{opacity:.7}.wrap{padding:14px}.assistant,.panel{background:#161b22;border:1px solid #30363d;border-radius:18px;padding:16px;margin-bottom:14px}textarea{width:100%;min-height:82px;border-radius:14px;padding:12px;background:#0d1117;color:white;border:1px solid #444}.primary{width:100%;padding:13px;border:0;border-radius:13px;font-weight:700;margin-top:9px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.tile{background:#161b22;border:1px solid #30363d;border-radius:16px;padding:16px;min-height:94px}.tile b{display:block;margin-bottom:7px}.muted{opacity:.65;font-size:13px}.result{margin-top:10px;padding:12px;border-radius:12px;background:#0d1117;min-height:45px}.hidden{display:none}.back{padding:9px 13px;border-radius:10px;border:1px solid #555;background:#222;color:white}
+</style></head><body><header class="top"><h1>JavidDownloader Pro</h1><small>v4.2.2 · Javid AI Core</small></header><main class="wrap">
+<section id="home"><div class="assistant"><b>Javid Assistant</b><p class="muted">دستور خود را بنویسید؛ دستیار بخش مناسب را باز می‌کند.</p><textarea id="q" placeholder="مثلاً: اخبار امروز را نشان بده"></textarea><button class="primary" onclick="route()">اجرا</button><div id="answer" class="result">آماده دریافت دستور</div></div>
+<div class="grid">
+<div class="tile" onclick="openPage('download')"><b>⬇️ دانلود</b><span class="muted">مدیریت لینک و صف دانلود</span></div>
+<div class="tile" onclick="openPage('music')"><b>🎵 موسیقی</b><span class="muted">جستجو و پخش MP3</span></div>
+<div class="tile" onclick="openPage('news')"><b>📰 اخبار</b><span class="muted">خلاصه فارسی</span></div>
+<div class="tile" onclick="openPage('fx')"><b>💱 ارز</b><span class="muted">نرخ و تاریخچه</span></div>
+<div class="tile" onclick="openPage('football')"><b>⚽ فوتبال</b><span class="muted">نتایج و اطلاعات زنده</span></div>
+<div class="tile" onclick="openPage('maps')"><b>🗺️ نقشه آفلاین</b><span class="muted">دانلود منطقه و مسیریابی</span></div>
+<div class="tile" onclick="openPage('bot')"><b>🤖 Telegram Bot</b><span class="muted">Downloaderjavid</span></div>
+<div class="tile" onclick="openPage('errors')"><b>🛠️ تشخیص خطا</b><span class="muted">Error ID و راهنمای رفع مشکل</span></div>
+</div></section>
+<section id="module" class="hidden"><button class="back" onclick="home()">← بازگشت</button><div class="panel"><h2 id="title"></h2><p id="desc"></p><div class="result" id="status"></div></div></section>
+</main><script>
+const modules={
+download:['دانلود هوشمند','تحلیل لینک، انتخاب فرمت، صف، توقف/ادامه و تلاش مجدد.'],
+music:['Music AI','جستجو بر اساس خواننده، عنوان یا بخشی از متن؛ MP3 و پخش داخل اپ.'],
+news:['Persian News AI','جمع‌آوری چندمنبعی، حذف خبر تکراری و خلاصه فارسی.'],
+fx:['FX & Markets','ارز، طلا، سکه، تاریخچه و تغییرات.'],
+football:['Football Live','دقیقه بازی، نتیجه، گلزن، کارت و خلاصه پس از مسابقه.'],
+maps:['Offline Navigation','انتخاب کشور/استان، دانلود نقشه و مسیریابی آفلاین.'],
+bot:['Downloaderjavid Bot','اتصال دوطرفه اپ و بات برای دستورات و اعلان‌ها.'],
+errors:['Smart Error Diagnosis','ثبت Error ID و پیشنهاد مرحله مناسب برای رفع خطا.']};
+function openPage(k){document.getElementById('home').classList.add('hidden');document.getElementById('module').classList.remove('hidden');title.textContent=modules[k][0];desc.textContent=modules[k][1];status.textContent='ماژول آماده اتصال به موتور اجرایی است.'}
+function home(){module.classList.add('hidden');document.getElementById('home').classList.remove('hidden')}
+function route(){let q=document.getElementById('q').value.trim().toLowerCase(),k=null;if(/آهنگ|موسیقی|mp3|song/.test(q))k='music';else if(/خبر|news/.test(q))k='news';else if(/ارز|دلار|یورو|طلا|fx/.test(q))k='fx';else if(/فوتبال|بازی|لیگ|football/.test(q))k='football';else if(/نقشه|مسیر|آفلاین|map/.test(q))k='maps';else if(/تلگرام|بات|telegram/.test(q))k='bot';else if(/خطا|error|نصب/.test(q))k='errors';else if(/دانلود|لینک|download/.test(q))k='download';answer.textContent=k?'تشخیص داده شد: '+modules[k][0]:'دستور را متوجه نشدم؛ موضوع را دقیق‌تر بنویسید.';if(k)setTimeout(()=>openPage(k),350)}
+</script></body></html>
