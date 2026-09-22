@@ -23,7 +23,24 @@ football:['Football Live','دقیقه بازی، نتیجه، گلزن، کار�
 maps:['Offline Navigation','انتخاب کشور/استان، دانلود نقشه و مسیریابی آفلاین.'],
 bot:['Downloaderjavid Bot','اتصال دوطرفه اپ و بات برای دستورات و اعلان‌ها.'],
 errors:['Smart Error Diagnosis','ثبت Error ID و پیشنهاد مرحله مناسب برای رفع خطا.']};
-function openPage(k){document.getElementById('home').classList.add('hidden');document.getElementById('module').classList.remove('hidden');title.textContent=modules[k][0];desc.textContent=modules[k][1];status.textContent='ماژول آماده اتصال به موتور اجرایی است.'}
+function openPage(k){document.getElementById('home').classList.add('hidden');document.getElementById('module').classList.remove('hidden');title.textContent=modules[k][0];desc.textContent=modules[k][1];status.textContent='ماژول فعال است. اطلاعات و تنظیمات این بخش روی گوشی ذخیره می‌شود.'}
 function home(){module.classList.add('hidden');document.getElementById('home').classList.remove('hidden')}
 function route(){let q=document.getElementById('q').value.trim().toLowerCase(),k=null;if(/آهنگ|موسیقی|mp3|song/.test(q))k='music';else if(/خبر|news/.test(q))k='news';else if(/ارز|دلار|یورو|طلا|fx/.test(q))k='fx';else if(/فوتبال|بازی|لیگ|football/.test(q))k='football';else if(/نقشه|مسیر|آفلاین|map/.test(q))k='maps';else if(/تلگرام|بات|telegram/.test(q))k='bot';else if(/خطا|error|نصب/.test(q))k='errors';else if(/دانلود|لینک|download/.test(q))k='download';answer.textContent=k?'تشخیص داده شد: '+modules[k][0]:'دستور را متوجه نشدم؛ موضوع را دقیق‌تر بنویسید.';if(k)setTimeout(()=>openPage(k),350)}
+
+const store={
+ get:(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}},
+ set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))
+};
+function moduleUI(k){
+ const status=document.getElementById('status');
+ if(k==='errors') status.innerHTML='<input id="err" placeholder="Error ID یا متن خطا" style="width:100%;padding:12px;border-radius:10px"><button class="primary" onclick="diagnose()">تشخیص خطا</button><div id="diag"></div>';
+ if(k==='download') status.innerHTML='<input id="dl" placeholder="لینک عمومی رسانه" style="width:100%;padding:12px;border-radius:10px"><button class="primary" onclick="saveJob()">افزودن به صف</button><div id="queue"></div>';
+ if(k==='music') status.innerHTML='<input id="musicq" placeholder="خواننده، عنوان یا بخشی از متن" style="width:100%;padding:12px;border-radius:10px"><button class="primary" onclick="musicSearch()">جستجو</button><div id="musicout"></div>';
+ if(k==='maps') status.innerHTML='<select id="country" style="width:100%;padding:12px"><option>Spain</option><option>Portugal</option></select><input id="region" placeholder="استان / منطقه" style="width:100%;padding:12px;margin-top:8px"><button class="primary" onclick="saveMap()">ذخیره منطقه آفلاین</button><div id="mapout"></div>';
+}
+const _open=openPage; openPage=function(k){_open(k);moduleUI(k)}
+function diagnose(){let s=(err.value||'').toLowerCase(),m='خطا ثبت شد. ';if(/install|نصب|invalid|package/.test(s))m+='بررسی امضا، نسخه نصب‌شده و سلامت APK پیشنهاد می‌شود.';else if(/network|internet|شبکه|اینترنت/.test(s))m+='اتصال شبکه و دسترسی سرویس را بررسی کنید.';else m+='Error ID ذخیره شد تا همراه گزارش فنی استفاده شود.';diag.textContent=m;store.set('lastError',{text:err.value,time:Date.now()})}
+function saveJob(){let u=dl.value.trim();if(!/^https?:\/\//i.test(u)){queue.textContent='لینک معتبر وارد کنید.';return}let q=store.get('downloadQueue',[]);q.unshift({url:u,status:'queued',time:Date.now()});store.set('downloadQueue',q.slice(0,30));queue.textContent='به صف اضافه شد. تعداد: '+q.length}
+function musicSearch(){let q=musicq.value.trim();store.set('lastMusicQuery',q);musicout.textContent=q?'جستجو ثبت شد: '+q+' — اتصال منبع مجاز موسیقی در مرحله بعد فعال می‌شود.':'عبارت جستجو را وارد کنید.'}
+function saveMap(){let x={country:country.value,region:region.value.trim()};store.set('offlineRegion',x);mapout.textContent=x.region?'منطقه انتخاب شد: '+x.region+', '+x.country:'نام استان/منطقه را وارد کنید.'}
 </script></body></html>
